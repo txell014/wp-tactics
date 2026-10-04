@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -24,18 +24,32 @@ interface BallPos {
   y: number;
 }
 
+type ActionType = "turn" | "exclusion" | "block";
+
+interface TacticalAction {
+  type: ActionType;
+  attackerId: string;
+  defenderId: string;
+}
+
 interface FrameData {
   id: string;
   label: string;
-  duration: number;
   players: Record<string, PlayerPos>;
   ball: BallPos;
+  actions: TacticalAction[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const POOL_W = 800;
 const POOL_H = 460;
+
+type PoolView = "full" | "half";
+const VIEW_DIMS: Record<PoolView, { w: number; h: number }> = {
+  full: { w: POOL_W, h: POOL_H },
+  half: { w: POOL_H, h: POOL_W / 2 },
+};
 
 // Definició de les jugadores (P, 1, 2, 3, 4, 5, B)
 const ROSTER_ATTACK: Player[] = [
@@ -82,20 +96,20 @@ function makeDefaultPositions(): Record<string, PlayerPos> {
   };
 }
 
-function makeFrame(id: string, label: string, dur: number, prev?: FrameData): FrameData {
+function makeFrame(id: string, label: string, prev?: FrameData): FrameData {
   return {
     id,
     label,
-    duration: dur,
     players: prev ? JSON.parse(JSON.stringify(prev.players)) : makeDefaultPositions(),
     ball: prev ? { ...prev.ball } : { x: 550, y: 230 }, // Pilota a la posició inicial del 3
+    actions: [], // les accions tàctiques no es copien al frame següent
   };
 }
 
 const INITIAL_FRAMES: FrameData[] = [
-  makeFrame("f1", "Posicions Inicials", 2.5),
-  makeFrame("f2", "Passada a la Boia", 2.0),
-  makeFrame("f3", "Xut a porteria", 1.5),
+  makeFrame("f1", "Posicions Inicials"),
+  makeFrame("f2", "Passada a la Boia"),
+  makeFrame("f3", "Xut a porteria"),
 ];
 
 // Ajustem lleugerament el frame 2
@@ -113,14 +127,14 @@ function PlayerTokenSVG({
   player,
   pos,
   selected,
-  isOnCanvas,
+  rot = 0,
 }: {
   player: Player;
   pos: PlayerPos;
   selected: boolean;
   isOnCanvas: boolean;
+  rot?: number;
 }) {
-  // Locals (Atac) color clar, Visitants (Defensa) blau fosc, Porteres vermell
   const isAttack = player.team === "attack";
   const isKeeper = player.team === "keeper";
 
@@ -130,15 +144,10 @@ function PlayerTokenSVG({
   const textColor = isAttack ? "#1a3a6b" : "#ffffff";
 
   return (
-    <g transform={`translate(${pos.x},${pos.y})`} style={{ cursor: "grab" }}>
+    <g transform={`translate(${pos.x},${pos.y}) rotate(${rot})`} style={{ cursor: "grab" }}>
       {selected && (
         <circle r={24} fill="none" stroke="#00d4d4" strokeWidth={2} strokeDasharray="4 3" opacity={0.8} />
       )}
-      {/* Direction arrow */}
-      <g transform={`rotate(${pos.angle})`}>
-        <line x1={0} y1={-14} x2={0} y2={-20} stroke={selected ? "#00d4d4" : "#aabbcc"} strokeWidth={2} strokeLinecap="round" />
-        <polygon points="0,-24 -4,-18 4,-18" fill={selected ? "#00d4d4" : "#aabbcc"} />
-      </g>
       {/* Cap shadow */}
       <circle r={15} fill="rgba(0,0,0,0.3)" cx={1} cy={2} />
       {/* Cap body */}
@@ -158,6 +167,87 @@ function PlayerTokenSVG({
   );
 }
 
+function ActionsLayer({ actions, players, rot = 0 }: { actions: TacticalAction[]; players: Record<string, PlayerPos>; rot?: number }) {
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {actions.map(a => {
+        const att = players[a.attackerId];
+        const def = players[a.defenderId];
+        if (!att || !def) return null;
+
+        const dx = def.x - att.x;
+        const dy = def.y - att.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        // Punts de la línia, just a la vora de cada gorra
+        const x1 = att.x + ux * 17, y1 = att.y + uy * 17;
+        const x2 = def.x - ux * 17, y2 = def.y - uy * 17;
+        const hasLine = len > 36;
+        const key = `${a.type}-${a.attackerId}-${a.defenderId}`;
+
+        // ── Bloquejar / Agafar ──
+        if (a.type === "block") {
+          const mx = (att.x + def.x) / 2;
+          const my = (att.y + def.y) / 2;
+          return (
+            <g key={key}>
+              {hasLine && <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#f0c040" strokeWidth={4} strokeLinecap="round" />}
+              <circle cx={mx} cy={my} r={9} fill="#111827" stroke="#f0c040" strokeWidth={1.5} />
+              <text x={mx} y={my + 1} textAnchor="middle" dominantBaseline="central" fontSize={11} transform={`rotate(${rot} ${mx} ${my + 1})`}>✋</text>
+            </g>
+          );
+        }
+
+        // ── Provocar Expulsió ──
+        if (a.type === "exclusion") {
+          return (
+            <g key={key}>
+              {hasLine && <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#e74c3c" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.8} />}
+              <circle cx={def.x} cy={def.y} r={15} fill="rgba(231,76,60,0.45)" />
+              <circle cx={def.x} cy={def.y} r={22} fill="none" stroke="#e74c3c" strokeWidth={2}>
+                <animate attributeName="r" values="20;27;20" dur="1.2s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.9;0.2;0.9" dur="1.2s" repeatCount="indefinite" />
+              </circle>
+              <path d={`M${def.x - 9},${def.y - 9} L${def.x + 9},${def.y + 9} M${def.x + 9},${def.y - 9} L${def.x - 9},${def.y + 9}`} stroke="#ff4d3d" strokeWidth={3} strokeLinecap="round" />
+              {(() => {
+                const lx = rot ? def.x + 33 : def.x;
+                const ly = rot ? def.y : def.y - 33;
+                return (
+                  <g transform={`rotate(${rot} ${lx} ${ly})`}>
+                    <rect x={lx - 16} y={ly - 7} width={32} height={14} rx={7} fill="#e74c3c" />
+                    <text x={lx} y={ly} textAnchor="middle" dominantBaseline="central" fontSize={9} fontWeight="800" fill="#fff" fontFamily="Inter,sans-serif">EXP</text>
+                  </g>
+                );
+              })()}
+            </g>
+          );
+        }
+
+        // ── Girar Defensor ──
+        const r = 27;
+        const a0 = (-150 * Math.PI) / 180;
+        const a1 = (100 * Math.PI) / 180;
+        const sx = def.x + r * Math.cos(a0), sy = def.y + r * Math.sin(a0);
+        const ex = def.x + r * Math.cos(a1), ey = def.y + r * Math.sin(a1);
+        // Punta de fletxa al final de l'arc (direcció tangent)
+        const tx = -Math.sin(a1), ty = Math.cos(a1);
+        const nx = Math.cos(a1), ny = Math.sin(a1);
+        const tip = `${ex + tx * 8},${ey + ty * 8}`;
+        const b1 = `${ex + nx * 5},${ey + ny * 5}`;
+        const b2 = `${ex - nx * 5},${ey - ny * 5}`;
+        return (
+          <g key={key}>
+            {hasLine && <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#00d4d4" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.8} />}
+            <path d={`M${sx},${sy} A${r},${r} 0 1 1 ${ex},${ey}`} fill="none" stroke="#00d4d4" strokeWidth={3} strokeLinecap="round" />
+            <polygon points={`${tip} ${b1} ${b2}`} fill="#00d4d4" />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 function PoolCanvas({
   frames,
   activeFrame,
@@ -169,8 +259,11 @@ function PoolCanvas({
   showPaths,
   contextMenu,
   onContextMenu,
+  onToggleAction,
   onCloseContext,
+  view,
 }: {
+  view: PoolView;
   frames: FrameData[];
   activeFrame: number;
   selectedId: string | null;
@@ -179,49 +272,120 @@ function PoolCanvas({
   onMoveBall: (x: number, y: number) => void;
   prevFrame?: FrameData;
   showPaths: boolean;
-  contextMenu: { id: string; x: number; y: number } | null;
-  onContextMenu: (id: string, x: number, y: number) => void;
+  contextMenu: { id: string; other: string; x: number; y: number } | null;
+  onContextMenu: (id: string, other: string, x: number, y: number) => void;
+  onToggleAction: (type: ActionType, attackerId: string, defenderId: string) => void;
   onCloseContext: () => void;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const draggingRef = useRef<{ id: string; type: "player" | "ball"; ox: number; oy: number } | null>(null);
+  
+  // Ara afegim startX, startY i moved per diferenciar clic de drag
+  const draggingRef = useRef<{ id: string; type: "player" | "ball"; ox: number; oy: number; startX: number; startY: number; moved: boolean; wasSelected: boolean } | null>(null);
   const frame = frames[activeFrame];
 
   function toSVGCoords(e: React.MouseEvent | MouseEvent) {
     const svg = svgRef.current!;
     const rect = svg.getBoundingClientRect();
-    const scaleX = POOL_W / rect.width;
-    const scaleY = POOL_H / rect.height;
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
+    const { w, h } = VIEW_DIMS[view];
+    const vx = (e.clientX - rect.left) * (w / rect.width);
+    const vy = (e.clientY - rect.top) * (h / rect.height);
+    // Mig camp: desfem el gir de 90° per tornar a coordenades de la piscina completa
+    return view === "half" ? { x: POOL_W - vy, y: vx } : { x: vx, y: vy };
+  }
+
+  // Check proximity for context menu trigger
+  function checkProximity(id: string, clientX: number, clientY: number) {
+    if (!frame) return;
+    const pos = frame.players[id];
+    const opponentIds = Object.keys(frame.players).filter(k => k.startsWith(id.startsWith("a") ? "d" : "a"));
+    let nearest: string | null = null;
+    let best = 40;
+    for (const oid of opponentIds) {
+      const op = frame.players[oid];
+      const dist = Math.hypot(pos.x - op.x, pos.y - op.y);
+      if (dist < best) {
+        best = dist;
+        nearest = oid;
+      }
+    }
+    if (nearest) onContextMenu(id, nearest, clientX, clientY);
+  }
+
+  // 2. Gestionem el clic inicial
+  function onMouseDownBase(e: React.MouseEvent, id: string, type: "player" | "ball") {
+    e.stopPropagation();
+    onCloseContext();
+    
+    // Guardem l'estat previ a fer el clic per saber si ja estava seleccionada
+    const wasSelected = selectedId === id;
+
+    // La seleccionem immediatament perquè es mostri la info mentre s'aguanta el clic o s'arrossega
+    if (type === "player") {
+      onSelectPlayer(id);
+    } else {
+      onSelectPlayer(null);
+    }
+
+    const { x, y } = toSVGCoords(e);
+    const pos = type === "ball" ? frame.ball : frame.players[id];
+    draggingRef.current = { 
+      id, 
+      type, 
+      ox: x - pos.x, 
+      oy: y - pos.y, 
+      startX: e.clientX, 
+      startY: e.clientY, 
+      moved: false,
+      wasSelected
     };
   }
 
-  function onMouseDown(e: React.MouseEvent, id: string, type: "player" | "ball") {
-    e.stopPropagation();
-    onSelectPlayer(id === "ball" ? null : id);
-    onCloseContext();
-    const { x, y } = toSVGCoords(e);
-    const pos = type === "ball" ? frame.ball : frame.players[id];
-    draggingRef.current = { id, type, ox: x - pos.x, oy: y - pos.y };
-  }
-
+  // 3. Gestionem l'arrossegament i el final del clic
   useEffect(() => {
     function onMove(e: MouseEvent) {
       if (!draggingRef.current || !svgRef.current) return;
+      
+      const dx = e.clientX - draggingRef.current.startX;
+      const dy = e.clientY - draggingRef.current.startY;
+      if (Math.hypot(dx, dy) > 3) {
+        draggingRef.current.moved = true; // Si es mou més de 3 píxels, es marca com "arrossegament"
+      }
+
       const { x, y } = toSVGCoords(e);
-      const nx = Math.max(15, Math.min(POOL_W - 15, x - draggingRef.current.ox));
+      const minX = view === "half" ? POOL_W / 2 + 15 : 15;
+      const nx = Math.max(minX, Math.min(POOL_W - 15, x - draggingRef.current.ox));
       const ny = Math.max(15, Math.min(POOL_H - 15, y - draggingRef.current.oy));
+      
       if (draggingRef.current.type === "ball") {
         onMoveBall(nx, ny);
       } else {
         onMovePlayer(draggingRef.current.id, nx, ny);
       }
     }
-    function onUp() {
-      draggingRef.current = null;
+    
+    function onUp(e: MouseEvent) {
+      if (draggingRef.current) {
+        const { id, type, moved, wasSelected } = draggingRef.current;
+
+        if (type === "player") {
+          if (moved) {
+            // S'ha arrossegat: en deixar anar, amaguem la informació
+            onSelectPlayer(null);
+          } else {
+            // Clic simple (sense arrossegar)
+            if (wasSelected) {
+              onSelectPlayer(null); // ja estava seleccionada -> deseleccionar
+            } else {
+              checkProximity(id, e.clientX, e.clientY); // queda seleccionada
+            }
+          }
+        } else if (type === "ball") {
+          if (!moved) onSelectPlayer(null);
+        }
+        draggingRef.current = null;
+      }
     }
+    
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
@@ -230,28 +394,14 @@ function PoolCanvas({
     };
   });
 
-  // Check proximity for context menu trigger
-  function checkProximity(id: string, e: React.MouseEvent) {
-    if (!frame) return;
-    const pos = frame.players[id];
-    const opponentIds = id.startsWith("a") ? Object.keys(frame.players).filter(k => k.startsWith("d")) : Object.keys(frame.players).filter(k => k.startsWith("a"));
-    for (const oid of opponentIds) {
-      const op = frame.players[oid];
-      const dist = Math.hypot(pos.x - op.x, pos.y - op.y);
-      if (dist < 40) {
-        onContextMenu(id, e.clientX, e.clientY);
-        return;
-      }
-    }
-  }
-
   const lineColor = "rgba(255,255,255,0.5)";
 
   return (
-    <div className="relative w-full h-full" onClick={() => { onSelectPlayer(null); onCloseContext(); }}>
+    <div className="relative w-full h-full" onMouseDown={() => { onSelectPlayer(null); onCloseContext(); }}>
       <svg
+        id="pool-svg"
         ref={svgRef}
-        viewBox={`0 0 ${POOL_W} ${POOL_H}`}
+        viewBox={`0 0 ${VIEW_DIMS[view].w} ${VIEW_DIMS[view].h}`}
         className="w-full h-full"
         style={{ display: "block" }}
       >
@@ -270,6 +420,7 @@ function PoolCanvas({
           </filter>
         </defs>
 
+        <g transform={view === "half" ? `matrix(0 -1 1 0 0 ${POOL_W})` : undefined}>
         <rect x={0} y={0} width={POOL_W} height={POOL_H} fill="url(#poolGrad)" rx={4} />
 
         {[80, 160, 240, 320, 400].map(y => (
@@ -303,8 +454,8 @@ function PoolCanvas({
             </g>
           );
         })}
-
-        <text x={POOL_W / 2} y={14} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.4)" fontFamily="JetBrains Mono">MIG CAMP</text>
+        
+        {view === "full" && <text x={POOL_W / 2} y={14} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.4)" fontFamily="JetBrains Mono">MIG CAMP</text>}
 
         {showPaths && prevFrame && Object.keys(frame.players).map(id => {
           const cur = frame.players[id];
@@ -329,18 +480,20 @@ function PoolCanvas({
             <path d={`M${prev.x},${prev.y} Q${mx},${my} ${cur.x},${cur.y}`} fill="none" stroke="#b8ff2e" strokeWidth={2} opacity={0.6} className="motion-path" />
           );
         })()}
-
+        
         {ALL_PLAYERS.map(player => {
           const pos = frame.players[player.id];
           if (!pos) return null;
+          if (view === "half" && pos.x < POOL_W / 2) return null;
           return (
-            <g key={player.id} filter="url(#tokenShadow)" onMouseDown={e => { e.stopPropagation(); onSelectPlayer(player.id); onMouseDown(e, player.id, "player"); checkProximity(player.id, e); }} className="player-token">
-              <PlayerTokenSVG player={player} pos={pos} selected={selectedId === player.id} isOnCanvas />
+            <g key={player.id} filter="url(#tokenShadow)" onMouseDown={e => { onMouseDownBase(e, player.id, "player"); }} className="player-token">
+              <PlayerTokenSVG player={player} pos={pos} selected={selectedId === player.id} isOnCanvas rot={view === "half" ? 90 : 0} />
             </g>
           );
         })}
-
-        <g filter="url(#ballGlow)" onMouseDown={e => { e.stopPropagation(); onMouseDown(e, "ball", "ball"); }} style={{ cursor: "grab" }}>
+        
+        <ActionsLayer actions={frame.actions} players={frame.players} rot={view === "half" ? 90 : 0} />
+        <g filter="url(#ballGlow)" onMouseDown={e => { onMouseDownBase(e, "ball", "ball"); }} style={{ cursor: "grab" }}>
           <circle r={10} cx={frame.ball.x} cy={frame.ball.y} fill="rgba(184,255,46,0.15)" />
           <circle r={9} cx={frame.ball.x} cy={frame.ball.y} fill="#b8ff2e" />
           <circle r={9} cx={frame.ball.x} cy={frame.ball.y} fill="none" stroke="#8acc20" strokeWidth={1.5} />
@@ -348,8 +501,9 @@ function PoolCanvas({
           <path d={`M${frame.ball.x - 7},${frame.ball.y} Q${frame.ball.x},${frame.ball.y + 3} ${frame.ball.x + 7},${frame.ball.y}`} fill="none" stroke="#0a0f1e" strokeWidth={1} opacity={0.4} />
           <circle r={3} cx={frame.ball.x - 3} cy={frame.ball.y - 4} fill="rgba(255,255,255,0.4)" />
         </g>
+      </g>
 
-        <g transform={`translate(${POOL_W - 130}, ${POOL_H - 65})`}>
+        <g transform={`translate(${(VIEW_DIMS[view].w - 115) / 2}, ${VIEW_DIMS[view].h - 65})`}>
           <rect x={0} y={0} width={115} height={58} rx={4} fill="rgba(10,15,30,0.7)" />
           {[
             { color: "#ffffff", label: "Equip Local (Atac)", stroke: "#ccc" },
@@ -364,25 +518,43 @@ function PoolCanvas({
         </g>
       </svg>
 
-      {contextMenu && (
-        <div
-          className="context-menu absolute z-50 bg-[#1a2235] border border-[#2a3a55] rounded-lg shadow-2xl p-1 min-w-[180px]"
-          style={{ left: contextMenu.x - (svgRef.current?.getBoundingClientRect().left ?? 0), top: contextMenu.y - (svgRef.current?.getBoundingClientRect().top ?? 0) - 10 }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="px-3 py-1.5 text-[10px] font-mono text-[#8899aa] uppercase tracking-wider border-b border-[#2a3a55] mb-1">Acció Tàctica</div>
-          {[
-            { icon: "↻", label: "Girar Defensor", color: "#00d4d4" },
-            { icon: "⚡", label: "Provocar Expulsió", color: "#e74c3c" },
-            { icon: "✋", label: "Bloquejar / Agafar", color: "#f0c040" },
-          ].map(({ icon, label, color }) => (
-            <button key={label} className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-left hover:bg-[#243050] transition-colors" onClick={onCloseContext}>
-              <span style={{ color, fontSize: 14 }}>{icon}</span>
-              <span className="text-[#f0f4f8]">{label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {contextMenu && (() => {
+        const attackerId = contextMenu.id.startsWith("a") ? contextMenu.id : contextMenu.other;
+        const defenderId = contextMenu.id.startsWith("a") ? contextMenu.other : contextMenu.id;
+        const attDisplay = ALL_PLAYERS.find(p => p.id === attackerId)?.display ?? "?";
+        const defDisplay = ALL_PLAYERS.find(p => p.id === defenderId)?.display ?? "?";
+        const options: { type: ActionType; icon: string; label: string; color: string }[] = [
+          { type: "turn", icon: "↻", label: "Girar Defensor", color: "#00d4d4" },
+          { type: "exclusion", icon: "⚡", label: "Provocar Expulsió", color: "#e74c3c" },
+          { type: "block", icon: "✋", label: "Bloquejar / Agafar", color: "#f0c040" },
+        ];
+        return (
+          <div
+            className="context-menu absolute z-50 bg-[#1a2235] border border-[#2a3a55] rounded-lg shadow-2xl p-1 min-w-[180px]"
+            style={{ left: contextMenu.x - (svgRef.current?.getBoundingClientRect().left ?? 0), top: contextMenu.y - (svgRef.current?.getBoundingClientRect().top ?? 0) - 10 }}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-mono text-[#8899aa] uppercase tracking-wider border-b border-[#2a3a55] mb-1">
+              Acció Tàctica · Atac {attDisplay} vs Def {defDisplay}
+            </div>
+            {options.map(({ type, icon, label, color }) => {
+              const active = frame.actions.some(a => a.type === type && a.attackerId === attackerId && a.defenderId === defenderId);
+              return (
+                <button
+                  key={type}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-left hover:bg-[#243050] transition-colors"
+                  onClick={() => { onToggleAction(type, attackerId, defenderId); onCloseContext(); }}
+                >
+                  <span style={{ color, fontSize: 14 }}>{icon}</span>
+                  <span className="text-[#f0f4f8] flex-1">{label}</span>
+                  {active && <span style={{ color }} className="text-xs font-bold">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -399,39 +571,39 @@ export default function App() {
   const [looping, setLooping] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [showPaths, setShowPaths] = useState(true);
-  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ id: string; other: string; x: number; y: number } | null>(null);
   const [exportMenu, setExportMenu] = useState(false);
-  const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [frameDuration, setFrameDuration] = useState(2.0);
+  const [exporting, setExporting] = useState(false);
+  const [poolView, setPoolView] = useState<PoolView>("full");
+  const { w: vw, h: vh } = VIEW_DIMS[poolView];
+  const totalDuration = frames.length * frameDuration;
 
   const frame = frames[activeFrame];
   const selectedPlayer = selectedId ? ALL_PLAYERS.find(p => p.id === selectedId) : null;
   const selectedPos = selectedId ? frame.players[selectedId] : null;
 
-  const totalDuration = frames.reduce((s, f) => s + f.duration, 0);
-
   useEffect(() => {
-    if (playing) {
-      playIntervalRef.current = setInterval(() => {
-        setElapsed(prev => {
-          const next = prev + 0.1;
-          if (next >= totalDuration) {
-            if (looping) return 0;
-            setPlaying(false);
-            return totalDuration;
-          }
-          let acc = 0;
-          for (let i = 0; i < frames.length; i++) {
-            acc += frames[i].duration;
-            if (next < acc) { setActiveFrame(i); break; }
-          }
-          return next;
-        });
-      }, 100);
-    } else {
-      if (playIntervalRef.current) clearInterval(playIntervalRef.current);
+    if (!playing) return;
+    const t = setInterval(() => {
+      setElapsed(prev => Math.min(prev + 0.1, totalDuration));
+    }, 100);
+    return () => clearInterval(t);
+  }, [playing, totalDuration]);
+
+  // Final de la reproducció: bucle o aturada
+  useEffect(() => {
+    if (playing && elapsed >= totalDuration) {
+      if (looping) setElapsed(0);
+      else setPlaying(false);
     }
-    return () => { if (playIntervalRef.current) clearInterval(playIntervalRef.current); };
-  }, [playing, looping, frames, totalDuration]);
+  }, [elapsed, playing, looping, totalDuration]);
+
+  // El frame actiu es deriva del temps mentre es reprodueix
+  useEffect(() => {
+    if (!playing) return;
+    setActiveFrame(Math.min(frames.length - 1, Math.floor(elapsed / frameDuration)));
+  }, [elapsed, playing, frameDuration, frames.length]);
 
   function formatTime(s: number) {
     const m = Math.floor(s / 60).toString().padStart(2, "0");
@@ -447,10 +619,6 @@ export default function App() {
     setFrames(prev => prev.map((f, i) => i !== activeFrame ? f : { ...f, ball: { x, y } }));
   }
 
-  function updatePlayerAngle(id: string, angle: number) {
-    setFrames(prev => prev.map((f, i) => i !== activeFrame ? f : { ...f, players: { ...f.players, [id]: { ...f.players[id], angle } } }));
-  }
-
   function toggleBallPossession(id: string) {
     setFrames(prev => prev.map((f, i) => {
       if (i !== activeFrame) return f;
@@ -462,20 +630,53 @@ export default function App() {
     }));
   }
 
+  function toggleAction(type: ActionType, attackerId: string, defenderId: string) {
+    setFrames(prev => prev.map((f, i) => {
+      if (i !== activeFrame) return f;
+      const same = (a: TacticalAction) => a.type === type && a.attackerId === attackerId && a.defenderId === defenderId;
+      return {
+        ...f,
+        actions: f.actions.some(same) ? f.actions.filter(a => !same(a)) : [...f.actions, { type, attackerId, defenderId }],
+      };
+    }));
+  }
+
   function addFrame() {
-    const newFrame = makeFrame(`f${Date.now()}`, `Fotograma ${frames.length + 1}`, 2.0, frames[frames.length - 1]);
+    const newFrame = makeFrame(`f${Date.now()}`, `Fotograma ${frames.length + 1}`,frames[frames.length - 1]);
     setFrames(prev => [...prev, newFrame]);
     setActiveFrame(frames.length);
   }
 
   function deleteFrame(idx: number) {
     if (frames.length <= 1) return;
+    const newActive = Math.max(0, activeFrame >= idx ? activeFrame - 1 : activeFrame);
     setFrames(prev => prev.filter((_, i) => i !== idx));
-    setActiveFrame(prev => Math.max(0, prev >= idx ? prev - 1 : prev));
+    setActiveFrame(newActive);
+    setElapsed(newActive * frameDuration);
+    setPlaying(false);
+  }
+
+  function changeFrameDuration(v: number) {
+    const d = Math.max(0.5, v || 0.5);
+    setFrameDuration(d);
+    setElapsed(activeFrame * d);
+  }
+
+  function togglePlay() {
+    if (!playing && elapsed >= totalDuration) { setElapsed(0); setActiveFrame(0); }
+    setPlaying(p => !p);
+  }
+
+  function handleUndo() {
+    alert("La funcionalitat de desfer requereix un historial global (en desenvolupament).");
+  }
+
+  function handleRedo() {
+    alert("La funcionalitat de refer requereix un historial global (en desenvolupament).");
   }
 
   function resetPlay() {
-    setFrames(INITIAL_FRAMES.map(f => makeFrame(f.id, f.label, f.duration)));
+    setFrames(JSON.parse(JSON.stringify(INITIAL_FRAMES)));
     setActiveFrame(0);
     setElapsed(0);
     setPlaying(false);
@@ -489,68 +690,107 @@ export default function App() {
 
   const startVideoExport = async (resolution: string) => {
     setExportMenu(false);
-    setActiveFrame(0);
-    setElapsed(0);
-    await new Promise(r => setTimeout(r, 100));
-    
-    const svgElement = document.querySelector('svg');
-    if (!svgElement) return;
+    if (typeof MediaRecorder === "undefined") {
+      alert("Aquest navegador no permet exportar vídeo.");
+      return;
+    }
+    setPlaying(false);
+    setSelectedId(null);
+    setContextMenu(null);
+    setExporting(true);
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const width = resolution.includes("1080") ? 1920 : 1280;
-    const height = resolution.includes("1080") ? 1080 : 720;
-    canvas.width = width;
-    canvas.height = height;
+    const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+    const originalFrame = activeFrame;
+    const W = resolution.includes("1080") ? 1920 : 1280;
+    const H = resolution.includes("1080") ? 1080 : 720;
 
-    const stream = canvas.captureStream(30); 
-    const mimeType = MediaRecorder.isTypeSupported('video/webm; codecs=vp9') ? 'video/webm; codecs=vp9' : 'video/mp4'; 
-    const recorder = new MediaRecorder(stream, { mimeType });
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d")!;
+
+    const mimeType = [
+      "video/mp4;codecs=avc1",
+      "video/webm;codecs=vp9",
+      "video/webm",
+    ].find(t => MediaRecorder.isTypeSupported(t)) ?? "";
+    const ext = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
     const chunks: BlobPart[] = [];
 
-    recorder.ondataavailable = (e) => chunks.push(e.data);
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${playTitle.replace(/\s+/g, '_')}_Export.mp4`; 
-      a.click();
+    // Converteix la piscina (SVG) actual en una imatge
+    const loadPoolImage = async () => {
+      const svg = document.getElementById("pool-svg") as unknown as SVGSVGElement | null;
+      if (!svg) throw new Error("No s'ha trobat la piscina");
+      const clone = svg.cloneNode(true) as SVGSVGElement;
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      clone.setAttribute("width", String(vw));
+      clone.setAttribute("height", String(vh));
+      const xml = new XMLSerializer().serializeToString(clone);
+      const url = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml;charset=utf-8" }));
+      const img = new Image();
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error("No s'ha pogut renderitzar la piscina"));
+        img.src = url;
+      });
       URL.revokeObjectURL(url);
+      return img;
     };
 
-    recorder.start();
-    setPlaying(true); 
+    const scale = Math.min(W / vw, H / vh);
+    const dw = vw * scale, dh = vh * scale;
+    const dx = (W - dw) / 2, dy = (H - dh) / 2;
 
-    const renderLoop = setInterval(() => {
-      const svgData = new XMLSerializer().serializeToString(svgElement);
-      const img = new Image();
-      img.onload = () => {
-        if (ctx) {
-          ctx.fillStyle = '#080e1c'; 
-          ctx.fillRect(0, 0, width, height);
-          const scale = Math.min(width / 800, height / 460);
-          const drawW = 800 * scale;
-          const drawH = 460 * scale;
-          const offsetX = (width - drawW) / 2;
-          const offsetY = (height - drawH) / 2;
-          ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
-        }
-      };
-      img.src = 'data:image/svg+xml;base64,' + window.btoa(unescape(encodeURIComponent(svgData)));
-    }, 1000 / 30); 
+    let recorder: MediaRecorder | null = null;
 
-    const stopCheck = setInterval(() => {
-      setElapsed((currentElapsed) => {
-        if (currentElapsed >= totalDuration) {
-          clearInterval(renderLoop);
-          clearInterval(stopCheck);
-          recorder.stop();
-          setPlaying(false);
+    try {
+      const rec = new MediaRecorder(
+        canvas.captureStream(30),
+        mimeType ? { mimeType, videoBitsPerSecond: 8_000_000 } : undefined
+      );
+      recorder = rec;
+      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      const stopped = new Promise<void>(res => { rec.onstop = () => res(); });
+
+      ctx.fillStyle = "#080e1c";
+      ctx.fillRect(0, 0, W, H);
+      rec.start();
+
+      for (let i = 0; i < frames.length; i++) {
+        setActiveFrame(i);
+        setElapsed(i * frameDuration);
+        await wait(120); // deixa que React pinti el frame
+        const img = await loadPoolImage();
+
+        const end = performance.now() + frameDuration * 1000;
+        while (performance.now() < end) {
+          ctx.fillStyle = "#080e1c";
+          ctx.fillRect(0, 0, W, H);
+          ctx.drawImage(img, dx, dy, dw, dh);
+          await wait(1000 / 30);
         }
-        return currentElapsed;
-      });
-    }, 200);
+      }
+
+      await wait(100);
+      rec.stop();
+      await stopped;
+
+      const blob = new Blob(chunks, { type: mimeType || "video/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${playTitle.replace(/\s+/g, "_")}.${ext}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      console.error(err);
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+      alert("Error exportant el vídeo.");
+    } finally {
+      setActiveFrame(originalFrame);
+      setElapsed(originalFrame * frameDuration);
+      setExporting(false);
+    }
   };
 
   return (
@@ -585,14 +825,13 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-1">
-          {[{ label: "Desfer", icon: "↩" }, { label: "Refer", icon: "↪" }].map(({ label, icon }) => (
-            <button key={label} className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-mono min-h-[36px]" title={label}>
-              <span>{icon}</span>
-              <span className="hidden md:inline">{label}</span>
-            </button>
-          ))}
+          <button onClick={handleUndo} className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-mono min-h-[36px]" title="Desfer">
+            <span>↩</span><span className="hidden md:inline">Desfer</span>
+          </button>
+          <button onClick={handleRedo} className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-mono min-h-[36px]" title="Refer">
+            <span>↪</span><span className="hidden md:inline">Refer</span>
+          </button>
           <button onClick={resetPlay} className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-mono min-h-[36px] text-[#e74c3c] hover:text-[#ff6b6b] hover:bg-[#2a1515]">
-            <span>⟳</span>
             <span className="hidden md:inline">Reiniciar</span>
           </button>
         </div>
@@ -600,7 +839,7 @@ export default function App() {
         <div className="w-px h-6 bg-[#1e2d42]" />
 
         <div className="flex items-center gap-1">
-          <button className={`flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${playing ? "bg-[#1a2235] text-[#00d4d4]" : "bg-[#1a2235] text-[#f0f4f8] hover:text-[#00d4d4]"}`} onClick={() => setPlaying(p => !p)} title={playing ? "Pausa" : "Reproduir"}>
+          <button className={`flex items-center justify-center w-9 h-9 rounded-lg transition-colors ${playing ? "bg-[#1a2235] text-[#00d4d4]" : "bg-[#1a2235] text-[#f0f4f8] hover:text-[#00d4d4]"}`} onClick={togglePlay} title={playing ? "Pausa" : "Reproduir"}>
             {playing ? (
               <svg width={14} height={14} fill="currentColor" viewBox="0 0 16 16"><rect x={3} y={2} width={4} height={12} rx={1} /><rect x={9} y={2} width={4} height={12} rx={1} /></svg>
             ) : (
@@ -624,6 +863,18 @@ export default function App() {
         </div>
 
         <div className="flex-1" />
+        <div className="flex items-center rounded-lg border border-[#1e2d42] overflow-hidden">
+          {([["full", "Piscina completa"], ["half", "Mig camp"]] as const).map(([v, label]) => (
+            <button
+              key={v}
+              disabled={exporting}
+              onClick={() => { setPoolView(v); setContextMenu(null); setSelectedId(null); }}
+              className={`px-2.5 py-1.5 text-xs min-h-[36px] transition-colors disabled:opacity-50 ${poolView === v ? "bg-[#00d4d4] text-[#0a0f1e] font-semibold" : "bg-[#1a2235] text-[#8899aa] hover:text-[#f0f4f8]"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         <button onClick={() => setShowPaths(p => !p)} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors min-h-[36px] ${showPaths ? "bg-[#1a2235] text-[#00d4d4] border border-[#00d4d420]" : "btn-ghost"}`}>
           <svg width={12} height={12} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 16 16">
@@ -633,12 +884,12 @@ export default function App() {
         </button>
 
         <div className="relative">
-          <button onClick={() => setExportMenu(p => !p)} className="btn-export flex items-center gap-2 px-4 py-2 rounded-lg text-sm min-h-[36px] font-display tracking-wide">
+          <button disabled={exporting} onClick={() => setExportMenu(p => !p)} className="btn-export flex items-center gap-2 px-4 py-2 rounded-lg text-sm min-h-[36px] font-display tracking-wide disabled:opacity-50 disabled:cursor-wait">
             <svg width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 16 16">
               <path d="M8 2v9M5 8l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" />
               <rect x={2} y={12} width={12} height={2} rx={1} fill="currentColor" stroke="none" />
             </svg>
-            Exportar MP4
+            {exporting ? "Exportant…" : "Exportar MP4"}
           </button>
           {exportMenu && (
             <div className="absolute right-0 top-full mt-1 bg-[#1a2235] border border-[#2a3a55] rounded-lg shadow-2xl z-50 min-w-[140px]">
@@ -656,8 +907,9 @@ export default function App() {
 
       <div className="flex flex-1 overflow-hidden">
         <main className="flex-1 flex items-center justify-center bg-[#080e1c] p-3 overflow-hidden">
-          <div className="relative rounded-xl overflow-hidden" style={{ width: "min(calc(100%), calc((100vh - 180px) * 800/460))", aspectRatio: "800/460", boxShadow: "0 0 0 1px #1e2d42, 0 8px 40px rgba(0,0,0,0.6), 0 0 60px rgba(0,212,212,0.05)" }}>
-            <PoolCanvas frames={frames} activeFrame={activeFrame} selectedId={selectedId} onSelectPlayer={setSelectedId} onMovePlayer={updatePlayerPos} onMoveBall={updateBallPos} prevFrame={prevFrame} showPaths={showPaths} contextMenu={contextMenu} onContextMenu={(id, x, y) => setContextMenu({ id, x, y })} onCloseContext={() => setContextMenu(null)} />
+          <div className="relative rounded-xl overflow-hidden" style={{ width: `min(100%, calc((100vh - 180px) * ${vw}/${vh}))`, aspectRatio: `${vw}/${vh}`, boxShadow:"0 0 0 1px #1e2d42, 0 8px 40px rgba(0,0,0,0.6), 0 0 60px rgba(0,212,212,0.05)" }}>
+            <PoolCanvas view={poolView} frames={frames} activeFrame={activeFrame} selectedId={selectedId} onSelectPlayer={setSelectedId} onMovePlayer={updatePlayerPos} onMoveBall={updateBallPos} prevFrame={prevFrame} showPaths={showPaths} contextMenu={contextMenu} onContextMenu={(id, other, x, y) => setContextMenu({ id, other, x, y })} onToggleAction={toggleAction} onCloseContext={() => setContextMenu(null)} />
+            {exporting && <div className="absolute inset-0 z-40 cursor-wait" />}
           </div>
         </main>
 
@@ -687,25 +939,9 @@ export default function App() {
                   ))}
                 </div>
 
-                <div className="mb-3">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] text-[#8899aa] font-mono">Orientació</span>
-                    <span className="text-[10px] font-mono text-[#00d4d4]">{selectedPos.angle}°</span>
-                  </div>
-                  <input type="range" min={0} max={360} value={selectedPos.angle} onChange={e => updatePlayerAngle(selectedId!, +e.target.value)} className="w-full" />
-                  <div className="flex justify-center mt-2">
-                    <svg width={48} height={48} viewBox="0 0 48 48">
-                      <circle cx={24} cy={24} r={20} fill="#111827" stroke="#1e2d42" strokeWidth={1} />
-                      <circle cx={24} cy={24} r={3} fill="#1e2d42" />
-                      <line x1={24} y1={24} x2={24 + 15 * Math.sin(selectedPos.angle * Math.PI / 180)} y2={24 - 15 * Math.cos(selectedPos.angle * Math.PI / 180)} stroke="#00d4d4" strokeWidth={2} strokeLinecap="round" />
-                    </svg>
-                  </div>
-                </div>
-
                 <div className="mb-2">
                   <div className="text-[10px] text-[#8899aa] font-mono mb-1.5">Possessió Pilota</div>
                   <button onClick={() => toggleBallPossession(selectedId!)} className={`w-full flex items-center gap-2 px-2.5 py-2 rounded text-xs font-medium transition-colors ${selectedPos.hasBall ? "bg-[#1a2e0a] border border-[#b8ff2e40] text-[#b8ff2e]" : "bg-[#111827] border border-[#1e2d42] text-[#8899aa] hover:text-[#f0f4f8]"}`}>
-                    <circle r={4} cx={5} cy={5} />
                     <svg width={10} height={10} viewBox="0 0 20 20" fill={selectedPos.hasBall ? "#b8ff2e" : "#4a5568"}><circle cx={10} cy={10} r={9} /></svg>
                     {selectedPos.hasBall ? "Pilota a la mà" : "Lliure / Passada"}
                   </button>
@@ -717,19 +953,6 @@ export default function App() {
                 <div className="text-xs text-[#4a5568]">Clica una jugadora per inspeccionar-la</div>
               </div>
             )}
-          </div>
-
-          <div className="p-3 border-b border-[#1e2d42]">
-            <div className="text-[10px] font-mono text-[#4a5568] uppercase tracking-widest mb-2">Transició</div>
-            <div className="bg-[#111827] rounded p-2 mb-2">
-              <div className="text-xs text-[#f0f4f8] mb-1">Fricció de l'aigua</div>
-              <svg width="100%" height={28} viewBox="0 0 160 28">
-                <path d="M8 22 C30 22 60 6 152 6" fill="none" stroke="#00d4d4" strokeWidth={2} strokeLinecap="round" />
-                <circle cx={8} cy={22} r={3} fill="#00d4d4" />
-                <circle cx={152} cy={6} r={3} fill="#00d4d4" />
-              </svg>
-              <div className="text-[9px] text-[#4a5568] font-mono">suavitzat orgànic</div>
-            </div>
           </div>
 
           <div className="p-3 flex-1">
@@ -748,7 +971,11 @@ export default function App() {
                     const fill = p.team === "keeper" ? "#e74c3c" : color;
                     const textC = p.team === "attack" ? "#0a1525" : "#fff";
                     return (
-                      <div key={p.id} title={`${label} ${p.display} (${p.label})`} className="flex items-center justify-center w-8 h-8 rounded-full cursor-pointer hover:opacity-80 transition-opacity border-2" style={{ background: fill, borderColor: p.team === "keeper" ? "#c0392b" : borderColor }}>
+                      <div key={p.id} 
+                           onClick={() => setSelectedId(prev => prev === p.id ? null : p.id)}
+                           title={`${label} ${p.display} (${p.label})`} 
+                           className={`flex items-center justify-center w-8 h-8 rounded-full cursor-pointer hover:opacity-80 transition-all border-2 ${selectedId === p.id ? 'ring-2 ring-[#00d4d4] ring-offset-2 ring-offset-[#0d1b2a]' : ''}`} 
+                           style={{ background: fill, borderColor: p.team === "keeper" ? "#c0392b" : borderColor }}>
                         <span className="font-display font-bold text-xs" style={{ color: textC }}>{p.display}</span>
                       </div>
                     );
@@ -760,17 +987,24 @@ export default function App() {
         </aside>
       </div>
 
-      <footer className="bg-[#0d1b2a] border-t border-[#1e2d42] shrink-0" style={{ height: 110 }}>
-        <div className="flex items-stretch h-full px-3 gap-0 overflow-x-auto">
-          <div className="flex flex-col justify-center mr-3 shrink-0 min-w-[60px]">
-            <div className="text-[9px] font-mono text-[#4a5568] uppercase tracking-widest mb-1">Línia de temps</div>
+      <footer className="bg-[#0d1b2a] border-t border-[#1e2d42] shrink-0 flex flex-col justify-center" style={{ height: 130 }}>
+        <div className="flex items-stretch h-full px-4 py-3 gap-0 overflow-x-auto">
+          
+          <div className="flex flex-col justify-center mr-4 shrink-0 min-w-[90px] gap-1">
+            <div className="text-[9px] font-mono text-[#4a5568] uppercase tracking-widest">Línia de temps</div>
             <div className="text-xs font-mono text-[#00d4d4]">{formatTime(elapsed)}</div>
+            <div className="flex items-center gap-1 bg-[#0a1525] border border-[#1e2d42] px-1.5 py-0.5 rounded w-fit" title="Durada de cada frame">
+              <input type="number" step="0.5" min="0.5" value={frameDuration}
+                onChange={e => changeFrameDuration(+e.target.value)}
+                className="w-10 bg-transparent text-[#00d4d4] font-mono text-xs outline-none text-right" />
+              <span className="text-[#00d4d4] font-mono text-[10px]">s/frame</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-1 overflow-x-auto py-2">
+          <div className="flex items-center gap-3 flex-1 overflow-x-auto py-1 px-1">
             {frames.map((f, idx) => {
               return (
-                <div key={f.id} onClick={() => { setActiveFrame(idx); setElapsed(frames.slice(0, idx).reduce((s, fr) => s + fr.duration, 0)); }} className={`timeline-frame shrink-0 rounded-lg border-2 cursor-pointer overflow-hidden flex flex-col ${frameColor(idx)} w-44`} style={{ minHeight: 80 }}>
+                <div key={f.id} onClick={() => { setActiveFrame(idx); setElapsed(idx * frameDuration); }} className={`timeline-frame shrink-0 rounded-lg border-2 cursor-pointer overflow-hidden flex flex-col ${frameColor(idx)} w-[136px]`}>
                   <div className="flex-1 bg-[#0b2a4a] relative overflow-hidden">
                     <svg viewBox="0 0 100 58" width="100%" height="100%">
                       <rect width={100} height={58} fill="#0b2a4a" />
@@ -790,7 +1024,6 @@ export default function App() {
                   <div className="bg-[#111827] px-2 py-1 flex items-center justify-between gap-1">
                     <span className="text-[9px] font-display font-semibold text-[#f0f4f8] truncate leading-tight">{f.label}</span>
                     <div className="flex items-center gap-1 shrink-0">
-                      <span className="font-mono text-[9px] text-[#00d4d4] bg-[#0a1525] px-1 py-0.5 rounded">{f.duration}s</span>
                       {frames.length > 1 && (
                         <button onClick={e => { e.stopPropagation(); deleteFrame(idx); }} className="text-[#4a5568] hover:text-[#e74c3c] text-[10px] w-4 h-4 flex items-center justify-center rounded hover:bg-[#2a1515] transition-colors">×</button>
                       )}
@@ -800,24 +1033,21 @@ export default function App() {
               );
             })}
 
-            <button onClick={addFrame} className="shrink-0 w-20 min-h-[80px] rounded-lg border-2 border-dashed border-[#1e2d42] hover:border-[#00d4d4] hover:bg-[#00d4d408] transition-colors flex flex-col items-center justify-center gap-1 text-[#4a5568] hover:text-[#00d4d4]">
+            <button onClick={addFrame} className="shrink-0 w-20 min-h-[90px] rounded-lg border-2 border-dashed border-[#1e2d42] hover:border-[#00d4d4] hover:bg-[#00d4d408] transition-colors flex flex-col items-center justify-center gap-1 text-[#4a5568] hover:text-[#00d4d4]">
               <span className="text-2xl font-light leading-none">+</span>
               <span className="text-[9px] font-mono uppercase tracking-wider">Nou Frame</span>
             </button>
           </div>
 
-          <div className="flex flex-col justify-center ml-3 gap-1 shrink-0 w-24">
+          <div className="flex flex-col justify-center ml-4 gap-1 shrink-0 w-24">
             <div className="text-[9px] font-mono text-[#4a5568] uppercase tracking-widest">Navegar</div>
             <input type="range" min={0} max={totalDuration} step={0.1} value={elapsed} onChange={e => {
-                const t = +e.target.value;
-                setElapsed(t);
-                let acc = 0;
-                for (let i = 0; i < frames.length; i++) {
-                  acc += frames[i].duration;
-                  if (t < acc) { setActiveFrame(i); break; }
-                }
-              }} className="w-full" />
+              const t = +e.target.value;
+              setElapsed(t);
+              setActiveFrame(Math.min(frames.length - 1, Math.floor(t / frameDuration)));
+            }} className="w-full" />
           </div>
+
         </div>
       </footer>
     </div>
