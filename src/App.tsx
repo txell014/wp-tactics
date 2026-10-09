@@ -101,25 +101,14 @@ function makeFrame(id: string, label: string, prev?: FrameData): FrameData {
     id,
     label,
     players: prev ? JSON.parse(JSON.stringify(prev.players)) : makeDefaultPositions(),
-    ball: prev ? { ...prev.ball } : { x: 550, y: 230 }, // Pilota a la posició inicial del 3
+    ball: prev ? { ...prev.ball } : { x: 560, y: 220 }, // Pilota a la posició inicial del 3
     actions: [], // les accions tàctiques no es copien al frame següent
   };
 }
 
 const INITIAL_FRAMES: FrameData[] = [
-  makeFrame("f1", "Posicions Inicials"),
-  makeFrame("f2", "Passada a la Boia"),
-  makeFrame("f3", "Xut a porteria"),
+  makeFrame("f1", "Posicions Inicials")
 ];
-
-// Ajustem lleugerament el frame 2
-INITIAL_FRAMES[1].players.a3 = { x: 580, y: 230, angle: 180, hasBall: false };
-INITIAL_FRAMES[1].players.aB = { x: 710, y: 250, angle: 160, hasBall: true };
-INITIAL_FRAMES[1].ball = { x: 700, y: 250 };
-
-// Ajustem el frame 3
-INITIAL_FRAMES[2].players.aB = { x: 720, y: 250, angle: 140, hasBall: false };
-INITIAL_FRAMES[2].ball = { x: 770, y: 230 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -152,9 +141,6 @@ function PlayerTokenSVG({
       <circle r={15} fill="rgba(0,0,0,0.3)" cx={1} cy={2} />
       {/* Cap body */}
       <circle r={15} fill={fill} stroke={stroke} strokeWidth={selected ? 2.5 : 1.5} />
-      {/* Cap stripes */}
-      <path d={`M-15,0 Q0,-${isKeeper ? 18 : 15} 15,0`} fill="none" stroke={capStripes} strokeWidth={2.5} />
-      <path d={`M-12,-7 Q0,-${isKeeper ? 22 : 19} 12,-7`} fill="none" stroke={capStripes} strokeWidth={1.5} />
       {/* Number/Letter */}
       <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="800" fontFamily="Barlow Condensed,sans-serif" fill={textColor} y={1}>
         {player.display}
