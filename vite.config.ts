@@ -5,7 +5,7 @@ import path from 'node:path'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS ? '/wp-tactics/' : '/',
+  base: '/wp-tactics/', 
   plugins: [
     react(),
     tailwindcss(),
