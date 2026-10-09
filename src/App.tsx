@@ -129,7 +129,6 @@ function PlayerTokenSVG({
 
   const fill = isKeeper ? "#e74c3c" : isAttack ? "#ffffff" : "#1a3a6b";
   const stroke = selected ? "#00d4d4" : isAttack ? "#cccccc" : "#0a1525";
-  const capStripes = isAttack ? "#4a90d9" : isKeeper ? "#900" : "#ffffff";
   const textColor = isAttack ? "#1a3a6b" : "#ffffff";
 
   return (
@@ -139,7 +138,7 @@ function PlayerTokenSVG({
       )}
       {/* Cap shadow */}
       <circle r={15} fill="rgba(0,0,0,0.3)" cx={1} cy={2} />
-      {/* Cap body */}
+      {/* Cap body (sense ratlles) */}
       <circle r={15} fill={fill} stroke={stroke} strokeWidth={selected ? 2.5 : 1.5} />
       {/* Number/Letter */}
       <text textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="800" fontFamily="Barlow Condensed,sans-serif" fill={textColor} y={1}>
@@ -166,7 +165,6 @@ function ActionsLayer({ actions, players, rot = 0 }: { actions: TacticalAction[]
         const len = Math.hypot(dx, dy) || 1;
         const ux = dx / len;
         const uy = dy / len;
-        // Punts de la línia, just a la vora de cada gorra
         const x1 = att.x + ux * 17, y1 = att.y + uy * 17;
         const x2 = def.x - ux * 17, y2 = def.y - uy * 17;
         const hasLine = len > 36;
@@ -195,7 +193,6 @@ function ActionsLayer({ actions, players, rot = 0 }: { actions: TacticalAction[]
                 <animate attributeName="r" values="20;27;20" dur="1.2s" repeatCount="indefinite" />
                 <animate attributeName="opacity" values="0.9;0.2;0.9" dur="1.2s" repeatCount="indefinite" />
               </circle>
-              <path d={`M${def.x - 9},${def.y - 9} L${def.x + 9},${def.y + 9} M${def.x + 9},${def.y - 9} L${def.x - 9},${def.y + 9}`} stroke="#ff4d3d" strokeWidth={3} strokeLinecap="round" />
               {(() => {
                 const lx = rot ? def.x + 33 : def.x;
                 const ly = rot ? def.y : def.y - 33;
@@ -216,9 +213,10 @@ function ActionsLayer({ actions, players, rot = 0 }: { actions: TacticalAction[]
         const a1 = (100 * Math.PI) / 180;
         const sx = def.x + r * Math.cos(a0), sy = def.y + r * Math.sin(a0);
         const ex = def.x + r * Math.cos(a1), ey = def.y + r * Math.sin(a1);
-        // Punta de fletxa al final de l'arc (direcció tangent)
         const tx = -Math.sin(a1), ty = Math.cos(a1);
         const nx = Math.cos(a1), ny = Math.sin(a1);
+        
+        // Punts de la fletxa
         const tip = `${ex + tx * 8},${ey + ty * 8}`;
         const b1 = `${ex + nx * 5},${ey + ny * 5}`;
         const b2 = `${ex - nx * 5},${ey - ny * 5}`;
@@ -483,8 +481,6 @@ function PoolCanvas({
           <circle r={10} cx={frame.ball.x} cy={frame.ball.y} fill="rgba(184,255,46,0.15)" />
           <circle r={9} cx={frame.ball.x} cy={frame.ball.y} fill="#b8ff2e" />
           <circle r={9} cx={frame.ball.x} cy={frame.ball.y} fill="none" stroke="#8acc20" strokeWidth={1.5} />
-          <path d={`M${frame.ball.x - 5},${frame.ball.y - 7} Q${frame.ball.x},${frame.ball.y - 4} ${frame.ball.x + 5},${frame.ball.y - 7}`} fill="none" stroke="#0a0f1e" strokeWidth={1} opacity={0.4} />
-          <path d={`M${frame.ball.x - 7},${frame.ball.y} Q${frame.ball.x},${frame.ball.y + 3} ${frame.ball.x + 7},${frame.ball.y}`} fill="none" stroke="#0a0f1e" strokeWidth={1} opacity={0.4} />
           <circle r={3} cx={frame.ball.x - 3} cy={frame.ball.y - 4} fill="rgba(255,255,255,0.4)" />
         </g>
       </g>
