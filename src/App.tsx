@@ -828,7 +828,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-1">
-          <button onClick={resetPlay} className="btn-ghost flex items-center gap-1 pr-2.5 pl-25 py-1.5 rounded text-md font-mono min-h-[36px] text-[#e74c3c] hover:text-[#ff6b6b] hover:bg-[#2a1515]">
+          <button onClick={resetPlay} className="btn-ghost flex items-center gap-1 px-2.5 ml-22.5 py-1.5 rounded text-md font-mono min-h-[36px] text-[#e74c3c] hover:text-[#ff6b6b] hover:bg-[#2a1515]">
             <RotateCcw size={14} /><span className="hidden md:inline">Reiniciar</span>
           </button>
         </div>
