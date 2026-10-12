@@ -538,7 +538,7 @@ function PoolCanvas({
             onClick={e => e.stopPropagation()}
             onMouseDown={e => e.stopPropagation()}
           >
-            <div className="px-3 py-1.5 text-[10px] font-mono text-[#8899aa] uppercase tracking-wider border-b border-[#2a3a55] mb-1">
+            <div className="px-3 py-1.5 text-[13px] font-mono text-[#8899aa] uppercase tracking-wider border-b border-[#2a3a55] mb-1">
               Acció Tàctica · Atac {attDisplay} vs Def {defDisplay}
             </div>
             {options.map(({ type, icon, label, color }) => {
@@ -546,12 +546,12 @@ function PoolCanvas({
               return (
                 <button
                   key={type}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-left hover:bg-[#243050] transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded text-lg text-left hover:bg-[#243050] transition-colors"
                   onClick={() => { onToggleAction(type, attackerId, defenderId); onCloseContext(); }}
                 >
                   {icon}
                   <span className="text-[#f0f4f8] flex-1">{label}</span>
-                  {active && <span style={{ color }} className="text-xs font-bold">✓</span>}
+                  {active && <span style={{ color }} className="text-md font-bold">✓</span>}
                 </button>
               );
             })}
@@ -798,7 +798,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0f1e] overflow-hidden select-none">
-      <header className="flex items-center gap-3 px-4 py-2 bg-[#0d1b2a] border-b border-[#1e2d42] shrink-0" style={{ minHeight: 52 }}>
+      <header className="flex items-center gap-3 px-4 py-4 bg-[#0d1b2a] border-b border-[#1e2d42] shrink-0" style={{ minHeight: 52 }}>
         <div className="flex items-center gap-2 mr-2">
           <svg width={28} height={28} viewBox="0 0 28 28">
             <rect width={28} height={28} rx={6} fill="#00d4d4" opacity={0.15} />
@@ -806,14 +806,14 @@ export default function App() {
             <path d="M6,14 Q14,8 22,14" fill="none" stroke="#00d4d4" strokeWidth={1.5} />
             <circle cx={14} cy={14} r={3} fill="#ffdd1d" />
           </svg>
-          <span className="font-display text-[#00d4d4] font-bold text-sm tracking-wider uppercase hidden sm:block">AquaTac</span>
+          <span className="font-display text-[#00d4d4] font-bold text-lg tracking-wider uppercase hidden sm:block">AquaTac</span>
         </div>
 
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {editingTitle ? (
             <input
               autoFocus
-              className="bg-[#1a2235] border border-[#00d4d4] rounded px-2 py-1 text-sm text-[#f0f4f8] font-display font-semibold tracking-wide outline-none w-full max-w-sm"
+              className="bg-[#1a2235] border border-[#00d4d4] rounded px-2 py-1 text-lg text-[#f0f4f8] font-display font-semibold tracking-wide outline-none w-full max-w-sm"
               value={playTitle}
               onChange={e => setPlayTitle(e.target.value)}
               onBlur={() => setEditingTitle(false)}
@@ -821,14 +821,14 @@ export default function App() {
             />
           ) : (
             <button className="flex items-center gap-1.5 group max-w-sm" onClick={() => setEditingTitle(true)}>
-              <span className="font-display font-semibold text-sm text-[#f0f4f8] tracking-wide truncate">{playTitle}</span>
+              <span className="font-display font-semibold text-lg text-[#f0f4f8] tracking-wide truncate">{playTitle}</span>
               <Pencil size={12} className="text-[#4a5568] group-hover:text-[#8899aa]" />
             </button>
           )}
         </div>
 
         <div className="flex items-center gap-1">
-          <button onClick={resetPlay} className="btn-ghost flex items-center gap-1 px-2.5 py-1.5 rounded text-xs font-mono min-h-[36px] text-[#e74c3c] hover:text-[#ff6b6b] hover:bg-[#2a1515]">
+          <button onClick={resetPlay} className="btn-ghost flex items-center gap-1 pr-2.5 pl-25 py-1.5 rounded text-md font-mono min-h-[36px] text-[#e74c3c] hover:text-[#ff6b6b] hover:bg-[#2a1515]">
             <RotateCcw size={14} /><span className="hidden md:inline">Reiniciar</span>
           </button>
         </div>
@@ -848,7 +848,7 @@ export default function App() {
               <button className="flex items-center justify-center w-9 h-9 rounded-lg bg-[#1a2235] text-[#8899aa] hover:text-[#f0f4f8] transition-colors" onClick={() => { setPlaying(false); setElapsed(0); setActiveFrame(0); }} title="Aturar">
                 <svg width={12} height={12} fill="currentColor" viewBox="0 0 16 16"><rect x={2} y={2} width={12} height={12} rx={1} /></svg>
               </button>
-              <div className="font-mono text-xs text-[#00d4d4] bg-[#0d1b2a] px-2.5 py-1.5 rounded border border-[#1e2d42] min-w-[110px] text-center tabular-nums">
+              <div className="font-mono text-md text-[#00d4d4] bg-[#0d1b2a] px-2.5 py-1.5 rounded border border-[#1e2d42] min-w-[110px] text-center tabular-nums">
                 {formatTime(elapsed)} / {formatTime(totalDuration)}
               </div>
             </div>
@@ -863,7 +863,7 @@ export default function App() {
               key={v}
               disabled={exporting}
               onClick={() => { setPoolView(v); setContextMenu(null); setSelectedId(null); }}
-              className={`px-2.5 py-1.5 text-xs min-h-[36px] transition-colors disabled:opacity-50 ${poolView === v ? "bg-[#00d4d4] text-[#0a0f1e] font-semibold" : "bg-[#1a2235] text-[#8899aa] hover:text-[#f0f4f8]"}`}
+              className={`px-2.5 py-1.5 text-md min-h-[36px] transition-colors disabled:opacity-50 ${poolView === v ? "bg-[#00d4d4] text-[#0a0f1e] font-semibold" : "bg-[#1a2235] text-[#8899aa] hover:text-[#f0f4f8]"}`}
             >
               {label}
             </button>
@@ -876,7 +876,7 @@ export default function App() {
               key={m}
               disabled={exporting}
               onClick={() => { setAppMode(m); if (m === "pissarra") setPlaying(false); }}
-              className={`px-3 py-1.5 text-xs min-h-[36px] transition-colors capitalize disabled:opacity-50 ${appMode === m ? "bg-[#00d4d4] text-[#0a0f1e] font-semibold" : "bg-[#1a2235] text-[#8899aa] hover:text-[#f0f4f8]"}`}
+              className={`px-3 py-1.5 text-md min-h-[36px] transition-colors capitalize disabled:opacity-50 ${appMode === m ? "bg-[#00d4d4] text-[#0a0f1e] font-semibold" : "bg-[#1a2235] text-[#8899aa] hover:text-[#f0f4f8]"}`}
             >
               {m}
             </button>
@@ -886,7 +886,7 @@ export default function App() {
         {/* Només mostrem opcions de trajectòries i exportar en mode Animació */}
         {appMode === "animació" && (
           <>
-            <button onClick={() => setShowPaths(p => !p)} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs transition-colors min-h-[36px] mr-2 ${showPaths ? "bg-[#1a2235] text-[#00d4d4] border border-[#00d4d420]" : "btn-ghost"}`}>
+            <button onClick={() => setShowPaths(p => !p)} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-md transition-colors min-h-[36px] mr-2 ${showPaths ? "bg-[#1a2235] text-[#00d4d4] border border-[#00d4d420]" : "btn-ghost"}`}>
               <svg width={12} height={12} fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 16 16">
                 <path d="M2 12 Q6 4 10 8 Q12 10 14 4" strokeLinecap="round" strokeDasharray="3 2" />
               </svg>
@@ -894,7 +894,7 @@ export default function App() {
             </button>
 
             <div className="relative">
-              <button disabled={exporting} onClick={() => setExportMenu(p => !p)} className="btn-export flex items-center gap-2 px-4 py-2 rounded-lg text-sm min-h-[36px] font-display tracking-wide disabled:opacity-50 disabled:cursor-wait">
+              <button disabled={exporting} onClick={() => setExportMenu(p => !p)} className="btn-export flex items-center gap-2 px-4 py-2 rounded-lg text-lg min-h-[36px] font-display tracking-wide disabled:opacity-50 disabled:cursor-wait">
                 <svg width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 16 16">
                   <path d="M8 2v9M5 8l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" />
                   <rect x={2} y={12} width={12} height={2} rx={1} fill="currentColor" stroke="none" />
@@ -903,11 +903,11 @@ export default function App() {
               </button>
               {exportMenu && (
                 <div className="absolute right-0 top-full mt-1 bg-[#1a2235] border border-[#2a3a55] rounded-lg shadow-2xl z-50 min-w-[140px]">
-                  <div className="px-3 py-1.5 text-[10px] font-mono text-[#8899aa] uppercase tracking-wider border-b border-[#2a3a55]">Resolució</div>
+                  <div className="px-3 py-1.5 text-[13px] font-mono text-[#8899aa] uppercase tracking-wider border-b border-[#2a3a55]">Resolució</div>
                   {["720p HD", "1080p Full HD"].map(res => (
-                    <button key={res} className="w-full text-left px-3 py-2.5 text-sm text-[#f0f4f8] hover:bg-[#243050] transition-colors flex items-center justify-between" onClick={() => startVideoExport(res)}>
+                    <button key={res} className="w-full text-left px-3 py-2.5 text-lg text-[#f0f4f8] hover:bg-[#243050] transition-colors flex items-center justify-between" onClick={() => startVideoExport(res)}>
                       <span>{res}</span>
-                      <span className="text-[#8899aa] text-xs font-mono">{res.includes("1080") ? "1920×1080" : "1280×720"}</span>
+                      <span className="text-[#8899aa] text-md font-mono">{res.includes("1080") ? "1920×1080" : "1280×720"}</span>
                     </button>
                   ))}
                 </div>
@@ -942,7 +942,7 @@ export default function App() {
 
         <aside className="w-[220px] shrink-0 bg-[#0d1b2a] border-l border-[#1e2d42] flex flex-col overflow-y-auto">
           <div className="p-3 border-b border-[#1e2d42]">
-            <div className="text-[10px] font-mono text-[#4a5568] uppercase tracking-widest mb-2">Inspector</div>
+            <div className="text-[13px] font-mono text-[#4a5568] uppercase tracking-widest mb-2">Inspector</div>
 
             {selectedPlayer && selectedPos ? (
               <div>
@@ -953,20 +953,20 @@ export default function App() {
                   </svg>
                   <div>
                     <div className="font-display font-bold text-[#f0f4f8] text-base leading-none">{selectedPlayer.label}</div>
-                    <div className="text-xs text-[#8899aa] capitalize mt-0.5">{selectedPlayer.team === "keeper" ? "Portera" : selectedPlayer.team === "attack" ? "Equip Local (Atac)" : "Equip Visitant (Defensa)"}</div>
+                    <div className="text-md text-[#8899aa] capitalize mt-0.5">{selectedPlayer.team === "keeper" ? "Portera" : selectedPlayer.team === "attack" ? "Equip Local (Atac)" : "Equip Visitant (Defensa)"}</div>
                   </div>
                 </div>
 
                 {frame.actions.some(a => a.type === "exclusion" && a.defenderId === selectedId) && (
                   <div className="mb-3 bg-[#2a1515] border border-[#e74c3c] rounded px-2 py-1.5 flex items-center gap-2">
-                    <span className="text-[#e74c3c] text-sm">⚡</span>
-                    <span className="text-[#e74c3c] text-[10px] font-bold uppercase tracking-wider">Jugadora Expulsada</span>
+                    <span className="text-[#e74c3c] text-lg">⚡</span>
+                    <span className="text-[#e74c3c] text-[13px] font-bold uppercase tracking-wider">Jugadora Expulsada</span>
                   </div>
                 )}
 
                 <div className="mb-2">
-                  <div className="text-[10px] text-[#8899aa] font-mono mb-1.5">Possessió Pilota</div>
-                  <div className={`w-full flex items-center gap-2 px-2.5 py-2 rounded text-xs font-medium border ${selectedPos.hasBall ? "bg-[#1a2e0a] border-[#ffdd1d40] text-[#ffdd1d]" : "bg-[#111827] border-[#1e2d42] text-[#8899aa]"}`}>
+                  <div className="text-[13px] text-[#8899aa] font-mono mb-1.5">Possessió Pilota</div>
+                  <div className={`w-full flex items-center gap-2 px-2.5 py-2 rounded text-md font-medium border ${selectedPos.hasBall ? "bg-[#1a2e0a] border-[#ffdd1d40] text-[#ffdd1d]" : "bg-[#111827] border-[#1e2d42] text-[#8899aa]"}`}>
                     <svg width={10} height={10} viewBox="0 0 20 20" fill={selectedPos.hasBall ? "#ffdd1d" : "#4a5568"}><circle cx={10} cy={10} r={9} /></svg>
                     {selectedPos.hasBall ? "Té la pilota" : "Sense pilota"}
                   </div>
@@ -975,13 +975,13 @@ export default function App() {
             ) : (
               <div className="text-center py-4 flex flex-col items-center">
                 <Pointer size={28} className="text-[#2a3a55] mb-2" />
-                <div className="text-xs text-[#4a5568]">Clica una jugadora per inspeccionar-la</div>
+                <div className="text-md text-[#4a5568]">Clica una jugadora per inspeccionar-la</div>
               </div>
             )}
           </div>
 
           <div className="p-3 flex-1">
-            <div className="text-[10px] font-mono text-[#4a5568] uppercase tracking-widest mb-2">Banqueta</div>
+            <div className="text-[13px] font-mono text-[#4a5568] uppercase tracking-widest mb-2">Banqueta</div>
             {[
               { label: "Atac (Local)", players: ROSTER_ATTACK, color: "#ffffff", borderColor: "#ccc" },
               { label: "Defensa (Visitant)", players: ROSTER_DEFENSE, color: "#1a3a6b", borderColor: "#0a1525" },
@@ -989,7 +989,7 @@ export default function App() {
               <div key={label} className="mb-3">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <div className="w-2 h-2 rounded-full border border-gray-500" style={{ background: color }} />
-                  <span className="text-[10px] text-[#8899aa] font-display font-semibold uppercase tracking-wider">{label}</span>
+                  <span className="text-[13px] text-[#8899aa] font-display font-semibold uppercase tracking-wider">{label}</span>
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {players.map(p => {
@@ -1001,7 +1001,7 @@ export default function App() {
                            title={`${label} ${p.display} (${p.label})`} 
                            className={`flex items-center justify-center w-8 h-8 rounded-full cursor-pointer hover:opacity-80 transition-all border-2 ${selectedId === p.id ? 'ring-2 ring-[#00d4d4] ring-offset-2 ring-offset-[#0d1b2a]' : ''}`} 
                            style={{ background: fill, borderColor: p.team === "keeper" ? "#c0392b" : borderColor }}>
-                        <span className="font-display font-bold text-xs" style={{ color: textC }}>{p.display}</span>
+                        <span className="font-display font-bold text-md" style={{ color: textC }}>{p.display}</span>
                       </div>
                     );
                   })}
@@ -1016,13 +1016,13 @@ export default function App() {
           <div className="flex items-stretch h-full px-4 py-3 gap-0 overflow-x-auto">
             
             <div className="flex flex-col justify-center mr-4 shrink-0 min-w-[90px] gap-1 ml-8">
-              <div className="text-[9px] font-mono text-[#4a5568] uppercase tracking-widest">Línia de temps</div>
-              <div className="text-xs font-mono text-[#00d4d4]">{formatTime(elapsed)}</div>
+              <div className="text-[11px] font-mono text-[#4a5568] uppercase tracking-widest">Línia de temps</div>
+              <div className="text-md font-mono text-[#00d4d4]">{formatTime(elapsed)}</div>
               <div className="flex items-center gap-1 bg-[#0a1525] border border-[#1e2d42] px-1.5 py-0.5 rounded w-fit" title="Durada de cada frame">
                 <input type="number" step="0.5" min="0.5" value={frameDuration}
                   onChange={e => changeFrameDuration(+e.target.value)}
-                  className="w-10 bg-transparent text-[#00d4d4] font-mono text-xs outline-none text-right" />
-                <span className="text-[#00d4d4] font-mono text-[10px]">s/frame</span>
+                  className="w-10 bg-transparent text-[#00d4d4] font-mono text-md outline-none text-right" />
+                <span className="text-[#00d4d4] font-mono text-[13px]">s/frame</span>
               </div>
             </div>
 
@@ -1047,7 +1047,7 @@ export default function App() {
                       {idx === activeFrame && <div className="absolute inset-0 border-2 border-[#00d4d4] rounded pointer-events-none opacity-40" />}
                     </div>
                     <div className="bg-[#111827] px-2 py-1 flex items-center justify-between gap-1">
-                      <span className="text-[9px] font-display font-semibold text-[#f0f4f8] truncate leading-tight">{f.label}</span>
+                      <span className="text-[11px] font-display font-semibold text-[#f0f4f8] truncate leading-tight">{f.label}</span>
                       <div className="flex items-center gap-1 shrink-0">
                         {frames.length > 1 && (
                           <button onClick={e => { e.stopPropagation(); deleteFrame(idx); }} className="text-[#4a5568] hover:text-[#e74c3c] flex items-center justify-center rounded hover:bg-[#2a1515] transition-colors p-0.5"><X size={12} /></button>
@@ -1060,7 +1060,7 @@ export default function App() {
 
               <button onClick={addFrame} className="shrink-0 w-20 min-h-[90px] rounded-lg border-2 border-dashed border-[#1e2d42] hover:border-[#00d4d4] hover:bg-[#00d4d408] transition-colors flex flex-col items-center justify-center gap-1 text-[#4a5568] hover:text-[#00d4d4]">
                 <Plus size={24} className="mb-1" strokeWidth={1.5} />
-                <span className="text-[9px] font-mono uppercase tracking-wider">Nou Frame</span>
+                <span className="text-[11px] font-mono uppercase tracking-wider">Nou Frame</span>
               </button>
             </div>
           </div>
