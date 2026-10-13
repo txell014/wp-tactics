@@ -49,7 +49,7 @@ const POOL_H = 460;
 type PoolView = "full" | "half";
 const VIEW_DIMS: Record<PoolView, { w: number; h: number }> = {
   full: { w: POOL_W, h: POOL_H },
-  half: { w: POOL_H, h: POOL_W / 2 },
+  half: { w: POOL_H, h: 300 }, 
 };
 
 // Definició de les jugadores (P, 1, 2, 3, 4, 5, B)
@@ -241,7 +241,6 @@ function PoolCanvas({
   onSelectPlayer,
   onMovePlayer,
   onMoveBall,
-  prevFrame,
   showPaths,
   contextMenu,
   onContextMenu,
@@ -249,6 +248,8 @@ function PoolCanvas({
   onCloseContext,
   view,
   appMode,
+  elapsed,
+  frameDuration,
 }: {
   view: PoolView;
   frames: FrameData[];
@@ -257,19 +258,19 @@ function PoolCanvas({
   onSelectPlayer: (id: string | null) => void;
   onMovePlayer: (id: string, x: number, y: number) => void;
   onMoveBall: (x: number, y: number) => void;
-  prevFrame?: FrameData;
   showPaths: boolean;
   contextMenu: { id: string; other: string; x: number; y: number } | null;
   onContextMenu: (id: string, other: string, x: number, y: number) => void;
   onToggleAction: (type: ActionType, attackerId: string, defenderId: string) => void;
   onCloseContext: () => void;
   appMode: "animació" | "pissarra";
+  elapsed: number;
+  frameDuration: number;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
-  
   const draggingRef = useRef<{ id: string; type: "player" | "ball"; ox: number; oy: number; startX: number; startY: number; moved: boolean; wasSelected: boolean } | null>(null);
   
-  // NOU ESTAT PER A LA CUA DE SERP (Tail)
+  // --- ESTAT RECUPERAT: Cua de serp viva amb memòria de temps (t) ---
   const [liveTrails, setLiveTrails] = useState<Record<string, { color: string, points: {x:number, y:number, t:number}[] }>>({});
 
   const frame = frames[activeFrame];
@@ -311,6 +312,8 @@ function PoolCanvas({
     if (appMode === "pissarra") {
       const p = ALL_PLAYERS.find(pl => pl.id === id);
       const trailColor = type === "ball" ? "#ffdd1d" : (p?.team === "attack" ? "#ffffff" : p?.team === "keeper" ? "#e74c3c" : "#1a3a6b");
+      
+      // Afegim el primer punt amb la marca de temps actual (t)
       setLiveTrails(prev => ({
         ...prev,
         [id]: { color: trailColor, points: [{ x: pos.x, y: pos.y, t: Date.now() }] }
@@ -326,13 +329,14 @@ function PoolCanvas({
       if (Math.hypot(dx, dy) > 3) draggingRef.current.moved = true; 
 
       const { x, y } = toSVGCoords(e);
-      const minX = view === "half" ? POOL_W / 2 + 15 : 15;
+      const minX = view === "half" ? POOL_W - VIEW_DIMS.half.h + 15 : 15;
       const nx = Math.max(minX, Math.min(POOL_W - 15, x - draggingRef.current.ox));
       const ny = Math.max(15, Math.min(POOL_H - 15, y - draggingRef.current.oy));
       
       if (draggingRef.current.type === "ball") onMoveBall(nx, ny);
       else onMovePlayer(draggingRef.current.id, nx, ny);
 
+      // Mentre movem, afegim els punts al trail actiu de la jugadora amb el temps (now)
       if (draggingRef.current.moved && appMode === "pissarra") {
         const now = Date.now();
         const dragId = draggingRef.current.id;
@@ -370,7 +374,7 @@ function PoolCanvas({
     };
   });
 
-  // Temporitzador per esborrar automàticament els punts antics del rastre
+  // --- NOU: Efecte per esborrar automàticament els punts antics ---
   useEffect(() => {
     if (appMode !== "pissarra") return;
     const timer = setInterval(() => {
@@ -380,9 +384,11 @@ function PoolCanvas({
         const next: typeof prev = {};
         for (const id in prev) {
           const trail = prev[id];
-          const validPoints = trail.points.filter(p => now - p.t < 1000); // 1.5 segons de durada abans d'esvair-se
+          // MANTENIM NOMÉS ELS PUNTS QUE TENEN MENYS DE 2000 ms (2 SEGONS) DE VIDA
+          const validPoints = trail.points.filter(p => now - p.t < 800);
           if (validPoints.length !== trail.points.length) changed = true;
-          if (validPoints.length > 0) next[id] = { ...trail, points: validPoints };
+          // Només guardem el trail si queden punts suficients per traçar una línia
+          if (validPoints.length > 1) next[id] = { ...trail, points: validPoints };
         }
         return changed ? next : prev;
       });
@@ -390,7 +396,70 @@ function PoolCanvas({
     return () => clearInterval(timer);
   }, [appMode]);
 
+  const currentIdx = activeFrame;
+  const nextIdx = Math.min(frames.length - 1, currentIdx + 1);
+  const startFrame = frames[currentIdx];
+  const endFrame = frames[nextIdx];
+  
+  let t = 0;
+  if (appMode === "animació" && currentIdx !== nextIdx && frameDuration > 0) {
+    t = (elapsed - currentIdx * frameDuration) / frameDuration;
+    t = Math.max(0, Math.min(1, t)); 
+  }
+
+  const renderPlayers = { ...startFrame.players };
+  let renderBall = { ...startFrame.ball };
+  const animationPaths: { id: string, d: string, color: string, isBall: boolean }[] = [];
+
+  if (t > 0) {
+    for (const id in renderPlayers) {
+      const p0 = startFrame.players[id];
+      const p2 = endFrame.players[id];
+      if (!p0 || !p2) continue;
+      
+      const dist = Math.hypot(p2.x - p0.x, p2.y - p0.y);
+      if (dist >= 5) {
+        const curveFactor = 0.3;
+        const p1 = {
+          x: (p0.x + p2.x) / 2 + (p2.y - p0.y) * curveFactor,
+          y: (p0.y + p2.y) / 2 - (p2.x - p0.x) * curveFactor
+        };
+        const p01 = { x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t };
+        const p12 = { x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t };
+        const p012 = { x: p01.x + (p12.x - p01.x) * t, y: p01.y + (p12.y - p01.y) * t };
+        
+        renderPlayers[id] = { ...p0, x: p012.x, y: p012.y };
+        
+        if (showPaths) {
+          const player = ALL_PLAYERS.find(p => p.id === id);
+          const color = player?.team === "attack" ? "#ffffff" : player?.team === "keeper" ? "#e74c3c" : "#1a3a6b";
+          animationPaths.push({ id, d: `M${p0.x},${p0.y} Q${p01.x},${p01.y} ${p012.x},${p012.y}`, color, isBall: false });
+        }
+      }
+    }
+    
+    const b0 = startFrame.ball;
+    const b2 = endFrame.ball;
+    if (Math.hypot(b2.x - b0.x, b2.y - b0.y) >= 5) {
+      const curveFactor = 0.4;
+      const p1 = {
+        x: (b0.x + b2.x) / 2 + (b2.y - b0.y) * curveFactor,
+        y: (b0.y + b2.y) / 2 - (b2.x - b0.x) * curveFactor
+      };
+      const p01 = { x: b0.x + (p1.x - b0.x) * t, y: b0.y + (p1.y - b0.y) * t };
+      const p12 = { x: p1.x + (b2.x - p1.x) * t, y: p1.y + (b2.y - p1.y) * t };
+      const p012 = { x: p01.x + (p12.x - p01.x) * t, y: p01.y + (p12.y - p01.y) * t };
+      
+      renderBall = { ...b0, x: p012.x, y: p012.y };
+      
+      if (showPaths) {
+        animationPaths.push({ id: "ball", d: `M${b0.x},${b0.y} Q${p01.x},${p01.y} ${p012.x},${p012.y}`, color: "#ffdd1d", isBall: true });
+      }
+    }
+  }
+
   const lineColor = "rgba(255,255,255,0.5)";
+  const prevFrame = activeFrame > 0 ? frames[activeFrame - 1] : undefined;
 
   return (
     <div className="relative w-full h-full" onMouseDown={() => { onSelectPlayer(null); onCloseContext(); }}>
@@ -411,111 +480,123 @@ function PoolCanvas({
         </defs>
 
         <g transform={view === "half" ? `matrix(0 -1 1 0 0 ${POOL_W})` : undefined}>
-        <rect x={0} y={0} width={POOL_W} height={POOL_H} fill="url(#poolGrad)" rx={4} />
+          <rect x={0} y={0} width={POOL_W} height={POOL_H} fill="url(#poolGrad)" rx={4} />
 
-        <rect x={20} y={20} width={POOL_W - 40} height={POOL_H - 40} fill="none" stroke={lineColor} strokeWidth={2} />
-        <line x1={POOL_W / 2} y1={20} x2={POOL_W / 2} y2={POOL_H - 20} stroke="rgba(255,255,255,0.7)" strokeWidth={2} />
+          <rect x={20} y={20} width={POOL_W - 40} height={POOL_H - 40} fill="none" stroke={lineColor} strokeWidth={2} />
+          <line x1={POOL_W / 2} y1={20} x2={POOL_W / 2} y2={POOL_H - 20} stroke="rgba(255,255,255,0.7)" strokeWidth={2} />
 
-        {/* Línia de 5 metres (Groc ataronjat) */}
-        {[20 + (POOL_W - 40) * (5 / 30), POOL_W - 20 - (POOL_W - 40) * (5 / 30)].map((x, i) => (
-          <line key={i} x1={x} y1={20} x2={x} y2={POOL_H - 20} stroke="#f59e0b" strokeWidth={1.5} opacity={0.8} />
-        ))}
+          {[20 + (POOL_W - 40) * (5 / 30), POOL_W - 20 - (POOL_W - 40) * (5 / 30)].map((x, i) => (
+            <line key={i} x1={x} y1={20} x2={x} y2={POOL_H - 20} stroke="#f59e0b" strokeWidth={1.5} opacity={0.8} />
+          ))}
+          {[20 + (POOL_W - 40) * (6 / 30), POOL_W - 20 - (POOL_W - 40) * (6 / 30)].map((x, i) => (
+            <line key={i} x1={x} y1={20} x2={x} y2={POOL_H - 20} stroke="#84cc16" strokeWidth={1.5} opacity={0.8} />
+          ))}
+          {[20 + (POOL_W - 40) * (2 / 30), POOL_W - 20 - (POOL_W - 40) * (2 / 30)].map((x, i) => (
+            <line key={i} x1={x} y1={20} x2={x} y2={POOL_H - 20} stroke="#e74c3c" strokeWidth={1.5} opacity={0.8} />
+          ))}
 
-        {/* Línia de 6 metres (Groc verdós) */}
-        {[20 + (POOL_W - 40) * (6 / 30), POOL_W - 20 - (POOL_W - 40) * (6 / 30)].map((x, i) => (
-          <line key={i} x1={x} y1={20} x2={x} y2={POOL_H - 20} stroke="#84cc16" strokeWidth={1.5} opacity={0.8} />
-        ))}
+          {[20, POOL_W - 20].map((gx, i) => {
+            const goalY1 = POOL_H / 2 - 35;
+            const goalY2 = POOL_H / 2 + 35;
+            return (
+              <g key={i}>
+                <rect x={i === 0 ? gx - 2 : gx - 6} y={goalY1} width={8} height={70} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} />
+                {[0, 14, 28, 42, 56, 70].map(dy => (
+                  <line key={dy} x1={i === 0 ? gx - 2 : gx - 6} y1={goalY1 + dy} x2={i === 0 ? gx + 6 : gx + 2} y2={goalY1 + dy} stroke="rgba(255,255,255,0.25)" strokeWidth={0.5} />
+                ))}
+                {[0, 2, 4].map(dx => (
+                  <line key={dx} x1={i === 0 ? gx - 2 + dx * 2 : gx - 6 + dx * 2} y1={goalY1} x2={i === 0 ? gx - 2 + dx * 2 : gx - 6 + dx * 2} y2={goalY2} stroke="rgba(255,255,255,0.25)" strokeWidth={0.5} />
+                ))}
+                <circle r={3} cx={i === 0 ? gx + 6 : gx - 6} cy={goalY1} fill="#fff" opacity={0.9} />
+                <circle r={3} cx={i === 0 ? gx + 6 : gx - 6} cy={goalY2} fill="#fff" opacity={0.9} />
+              </g>
+            );
+          })}
+          
+          {view === "full" && <text x={POOL_W / 2} y={14} textAnchor="middle" fontSize={9} fill="rgba(255,255,255,0.4)" fontFamily="JetBrains Mono">MIG CAMP</text>}
 
-        {/* Línia de 2 metres (Vermella) */}
-        {[20 + (POOL_W - 40) * (2 / 30), POOL_W - 20 - (POOL_W - 40) * (2 / 30)].map((x, i) => (
-          <line key={i} x1={x} y1={20} x2={x} y2={POOL_H - 20} stroke="#e74c3c" strokeWidth={1.5} opacity={0.8} />
-        ))}
+          {/* LÍNIES D'EDICIÓ (Estàtiques de l'últim frame al frame actual) */}
+          {appMode === "animació" && t === 0 && showPaths && prevFrame && Object.keys(frame.players).map(id => {
+            const cur = frame.players[id];
+            const prev = prevFrame.players[id];
+            if (!prev || (Math.abs(cur.x - prev.x) < 5 && Math.abs(cur.y - prev.y) < 5)) return null;
+            const player = ALL_PLAYERS.find(p => p.id === id)!;
+            const color = player?.team === "attack" ? "#ffffff" : player?.team === "keeper" ? "#e74c3c" : "#1a3a6b";
+            const mx = (prev.x + cur.x) / 2 + (cur.y - prev.y) * 0.3;
+            const my = (prev.y + cur.y) / 2 - (cur.x - prev.x) * 0.3;
+            return (
+              <path key={id} d={`M${prev.x},${prev.y} Q${mx},${my} ${cur.x},${cur.y}`} fill="none" stroke={color} strokeWidth={2.5} strokeDasharray="6 4" opacity={0.8} className="motion-path" />
+            );
+          })}
 
-        {[20, POOL_W - 20].map((gx, i) => {
-          const goalY1 = POOL_H / 2 - 35;
-          const goalY2 = POOL_H / 2 + 35;
+          {appMode === "animació" && t === 0 && showPaths && prevFrame && (() => {
+            const cur = frame.ball;
+            const prev = prevFrame.ball;
+            if (Math.abs(cur.x - prev.x) < 5 && Math.abs(cur.y - prev.y) < 5) return null;
+            const mx = (prev.x + cur.x) / 2 + (cur.y - prev.y) * 0.4;
+            const my = (prev.y + cur.y) / 2 - (cur.x - prev.x) * 0.4;
+            return (
+              <path d={`M${prev.x},${prev.y} Q${mx},${my} ${cur.x},${cur.y}`} fill="none" stroke="#ffdd1d" strokeWidth={3} strokeDasharray="6 4" opacity={0.8} className="motion-path" />
+            );
+          })()}
+
+          {/* LÍNIES D'ANIMACIÓ FLUIDA */}
+          {appMode === "animació" && animationPaths.map(path => (
+            <path key={path.id} d={path.d} fill="none" stroke={path.color} strokeWidth={path.isBall ? 3 : 2.5} opacity={path.isBall ? 1 : 0.9} strokeDasharray="6 4" className="motion-path" />
+          ))}
+
+          {/* LÍNIES TEMPORALS D'ESVAÏMENT PUNT A PUNT - Mode Pissarra */}
+          {appMode === "pissarra" && Object.entries(liveTrails).map(([id, trail]) => {
+            return (
+              <path key={id} d={createSmoothPath(trail.points)} fill="none" stroke={trail.color} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="8 8" opacity={0.7} />
+            );
+          })}
+          
+          {ALL_PLAYERS.map(player => {
+            const pos = renderPlayers[player.id];
+            if (!pos) return null;
+            if (view === "half" && pos.x < POOL_W - VIEW_DIMS.half.h) return null;
+            return (
+              <g key={player.id} filter="url(#tokenShadow)" onMouseDown={e => { onMouseDownBase(e, player.id, "player"); }} className="player-token">
+                <PlayerTokenSVG player={player} pos={pos} selected={selectedId === player.id} isOnCanvas rot={view === "half" ? 90 : 0} />
+              </g>
+            );
+          })}
+          
+          <ActionsLayer actions={startFrame.actions} players={startFrame.players} rot={view === "half" ? 90 : 0} />
+          
+          <g filter="url(#ballGlow)" onMouseDown={e => { onMouseDownBase(e, "ball", "ball"); }} style={{ cursor: "grab" }}>
+            <circle r={10} cx={renderBall.x} cy={renderBall.y} fill="#ffdd1d8c" />
+            <circle r={9} cx={renderBall.x} cy={renderBall.y} fill="#ffdd1d" />
+            <circle r={9} cx={renderBall.x} cy={renderBall.y} fill="none" stroke="#ffc31d" strokeWidth={1.5} />
+            <circle r={3} cx={renderBall.x - 3} cy={renderBall.y - 4} fill="rgba(255,255,255,0.4)" />
+          </g>
+        </g>
+
+        {(() => {
+          const scale = view === "half" ? 0.75 : 1;
+          const w = 115 * scale;
+          const h = 58 * scale;
+          
+          const x = view === "half" ? VIEW_DIMS[view].w - w - 15 : (VIEW_DIMS[view].w - w) / 2;
+          const y = view === "half" ? VIEW_DIMS[view].h - h - 15 : VIEW_DIMS[view].h - 65;
+
           return (
-            <g key={i}>
-              <rect x={i === 0 ? gx - 2 : gx - 6} y={goalY1} width={8} height={70} fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.7)" strokeWidth={1.5} />
-              {[0, 14, 28, 42, 56, 70].map(dy => (
-                <line key={dy} x1={i === 0 ? gx - 2 : gx - 6} y1={goalY1 + dy} x2={i === 0 ? gx + 6 : gx + 2} y2={goalY1 + dy} stroke="rgba(255,255,255,0.25)" strokeWidth={0.5} />
+            <g transform={`translate(${x}, ${y}) scale(${scale})`}>
+              <rect x={0} y={0} width={115} height={58} rx={4} fill="rgba(10,15,30,0.7)" />
+              {[
+                { color: "#ffffff", label: "Equip Local (Atac)", stroke: "#ccc" },
+                { color: "#1a3a6b", label: "Equip Visitant (Def)", stroke: "none" },
+                { color: "#e74c3c", label: "Portera", stroke: "none" },
+              ].map(({ color, label, stroke }, i) => (
+                <g key={label} transform={`translate(8, ${i * 17 + 10})`}>
+                  <circle r={5} cx={5} cy={0} fill={color} stroke={stroke} />
+                  <text x={15} y={4} fontSize={9} fill="rgba(255,255,255,0.8)" fontFamily="Inter,sans-serif">{label}</text>
+                </g>
               ))}
-              {[0, 2, 4].map(dx => (
-                <line key={dx} x1={i === 0 ? gx - 2 + dx * 2 : gx - 6 + dx * 2} y1={goalY1} x2={i === 0 ? gx - 2 + dx * 2 : gx - 6 + dx * 2} y2={goalY2} stroke="rgba(255,255,255,0.25)" strokeWidth={0.5} />
-              ))}
-              <circle r={3} cx={i === 0 ? gx + 6 : gx - 6} cy={goalY1} fill="#fff" opacity={0.9} />
-              <circle r={3} cx={i === 0 ? gx + 6 : gx - 6} cy={goalY2} fill="#fff" opacity={0.9} />
             </g>
-          );
-        })}
-        
-        {view === "full" && <text x={POOL_W / 2} y={14} textAnchor="middle" fontSize={10} fill="rgba(255,255,255,0.4)" fontFamily="JetBrains Mono">MIG CAMP</text>}
-
-        {showPaths && prevFrame && Object.keys(frame.players).map(id => {
-          const cur = frame.players[id];
-          const prev = prevFrame.players[id];
-          if (!prev || (Math.abs(cur.x - prev.x) < 5 && Math.abs(cur.y - prev.y) < 5)) return null;
-          const player = ALL_PLAYERS.find(p => p.id === id)!;
-          const color = player?.team === "attack" ? "#ffffff" : "#c0392b";
-          const mx = (prev.x + cur.x) / 2 + (cur.y - prev.y) * 0.3;
-          const my = (prev.y + cur.y) / 2 - (cur.x - prev.x) * 0.3;
-          return (
-            <path key={id} d={`M${prev.x},${prev.y} Q${mx},${my} ${cur.x},${cur.y}`} fill="none" stroke={color} strokeWidth={1.5} opacity={0.8} className="motion-path" />
-          );
-        })}
-
-        {showPaths && prevFrame && (() => {
-          const cur = frame.ball;
-          const prev = prevFrame.ball;
-          if (Math.abs(cur.x - prev.x) < 5 && Math.abs(cur.y - prev.y) < 5) return null;
-          const mx = (prev.x + cur.x) / 2 + (cur.y - prev.y) * 0.4;
-          const my = (prev.y + cur.y) / 2 - (cur.x - prev.x) * 0.4;
-          return (
-            <path d={`M${prev.x},${prev.y} Q${mx},${my} ${cur.x},${cur.y}`} fill="none" stroke="#ffdd1d" strokeWidth={2} opacity={0.6} className="motion-path" />
           );
         })()}
-
-        {/* LÍNIES TEMPORALS (CUA DE SERP QUE S'ESVAEIX) */}
-        {appMode === "pissarra" && Object.entries(liveTrails).map(([id, trail]) => {
-          if (trail.points.length < 2) return null;
-          return (
-            <path key={id} d={createSmoothPath(trail.points)} fill="none" stroke={trail.color} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="8 8" opacity={0.7} />
-          );
-        })}
-        
-        {ALL_PLAYERS.map(player => {
-          const pos = frame.players[player.id];
-          if (!pos) return null;
-          if (view === "half" && pos.x < POOL_W / 2) return null;
-          return (
-            <g key={player.id} filter="url(#tokenShadow)" onMouseDown={e => { onMouseDownBase(e, player.id, "player"); }} className="player-token">
-              <PlayerTokenSVG player={player} pos={pos} selected={selectedId === player.id} isOnCanvas rot={view === "half" ? 90 : 0} />
-            </g>
-          );
-        })}
-        
-        <ActionsLayer actions={frame.actions} players={frame.players} rot={view === "half" ? 90 : 0} />
-        <g filter="url(#ballGlow)" onMouseDown={e => { onMouseDownBase(e, "ball", "ball"); }} style={{ cursor: "grab" }}>
-          <circle r={10} cx={frame.ball.x} cy={frame.ball.y} fill="#ffdd1d8c" />
-          <circle r={9} cx={frame.ball.x} cy={frame.ball.y} fill="#ffdd1d" />
-          <circle r={9} cx={frame.ball.x} cy={frame.ball.y} fill="none" stroke="#ffc31d" strokeWidth={1.5} />
-          <circle r={3} cx={frame.ball.x - 3} cy={frame.ball.y - 4} fill="rgba(255,255,255,0.4)" />
-        </g>
-      </g>
-
-        <g transform={`translate(${(VIEW_DIMS[view].w - 115) / 2}, ${VIEW_DIMS[view].h - 65})`}>
-          <rect x={0} y={0} width={115} height={58} rx={4} fill="rgba(10,15,30,0.7)" />
-          {[
-            { color: "#ffffff", label: "Equip Local (Atac)", stroke: "#ccc" },
-            { color: "#1a3a6b", label: "Equip Visitant (Def)", stroke: "none" },
-            { color: "#e74c3c", label: "Portera", stroke: "none" },
-          ].map(({ color, label, stroke }, i) => (
-            <g key={label} transform={`translate(8, ${i * 17 + 10})`}>
-              <circle r={5} cx={5} cy={0} fill={color} stroke={stroke} />
-              <text x={15} y={4} fontSize={9} fill="rgba(255,255,255,0.8)" fontFamily="Inter,sans-serif">{label}</text>
-            </g>
-          ))}
-        </g>
       </svg>
 
       {contextMenu && (() => {
@@ -524,7 +605,6 @@ function PoolCanvas({
         const attDisplay = ALL_PLAYERS.find(p => p.id === attackerId)?.display ?? "?";
         const defDisplay = ALL_PLAYERS.find(p => p.id === defenderId)?.display ?? "?";
         
-        // MODIFICAT AMB ICONES DE LUCIDE
         const options: { type: ActionType; icon: React.ReactNode; label: string; color: string }[] = [
           { type: "turn", icon: <RefreshCw size={14} color="#00d4d4" />, label: "Girar Defensor", color: "#00d4d4" },
           { type: "exclusion", icon: <Zap size={14} color="#e74c3c" />, label: "Provocar Expulsió", color: "#e74c3c" },
@@ -538,20 +618,20 @@ function PoolCanvas({
             onClick={e => e.stopPropagation()}
             onMouseDown={e => e.stopPropagation()}
           >
-            <div className="px-3 py-1.5 text-[13px] font-mono text-[#8899aa] uppercase tracking-wider border-b border-[#2a3a55] mb-1">
+            <div className="px-3 py-1.5 text-[10px] font-mono text-[#8899aa] uppercase tracking-wider border-b border-[#2a3a55] mb-1">
               Acció Tàctica · Atac {attDisplay} vs Def {defDisplay}
             </div>
             {options.map(({ type, icon, label, color }) => {
-              const active = frame.actions.some(a => a.type === type && a.attackerId === attackerId && a.defenderId === defenderId);
+              const active = startFrame.actions.some(a => a.type === type && a.attackerId === attackerId && a.defenderId === defenderId);
               return (
                 <button
                   key={type}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded text-lg text-left hover:bg-[#243050] transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-left hover:bg-[#243050] transition-colors"
                   onClick={() => { onToggleAction(type, attackerId, defenderId); onCloseContext(); }}
                 >
                   {icon}
                   <span className="text-[#f0f4f8] flex-1">{label}</span>
-                  {active && <span style={{ color }} className="text-md font-bold">✓</span>}
+                  {active && <span style={{ color }} className="text-xs font-bold">✓</span>}
                 </button>
               );
             })}
@@ -568,7 +648,7 @@ export default function App() {
   const [frames, setFrames] = useState<FrameData[]>(INITIAL_FRAMES);
   const [activeFrame, setActiveFrame] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [playTitle, setPlayTitle] = useState("Local vs Visitant — Jugada 6 contra 5");
+  const [playTitle, setPlayTitle] = useState("Local vs Visitant - Jugada 1");
   const [editingTitle, setEditingTitle] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [appMode, setAppMode] = useState<"animació" | "pissarra">("pissarra");
@@ -578,7 +658,7 @@ export default function App() {
   const [exportMenu, setExportMenu] = useState(false);
   const [frameDuration, setFrameDuration] = useState(2.0);
   const [exporting, setExporting] = useState(false);
-  const [poolView, setPoolView] = useState<PoolView>("full");
+  const [poolView, setPoolView] = useState<PoolView>("half");
   const { w: vw, h: vh } = VIEW_DIMS[poolView];
   const totalDuration = frames.length * frameDuration;
 
@@ -685,8 +765,6 @@ export default function App() {
     setPlaying(false);
   }
 
-  const prevFrame = activeFrame > 0 ? frames[activeFrame - 1] : undefined;
-
   function frameColor(idx: number) {
     return idx === activeFrame ? "border-[#00d4d4]" : "border-[#1e2d42]";
   }
@@ -759,19 +837,22 @@ export default function App() {
       ctx.fillRect(0, 0, W, H);
       rec.start();
 
-      for (let i = 0; i < frames.length; i++) {
-        setActiveFrame(i);
-        setElapsed(i * frameDuration);
-        await wait(120); // deixa que React pinti el frame
+      // NOU BUCLE D'EXPORTACIÓ FLUIDA A ~30 FPS
+      const exportFps = 25; 
+      const frameStep = 1 / exportFps;
+      
+      for (let e = 0; e <= totalDuration; e += frameStep) {
+        setElapsed(e);
+        setActiveFrame(Math.min(frames.length - 1, Math.floor(e / frameDuration)));
+        
+        await wait(30); // Esperem que React renderitzi el frame interpolat
         const img = await loadPoolImage();
-
-        const end = performance.now() + frameDuration * 1000;
-        while (performance.now() < end) {
-          ctx.fillStyle = "#080e1c";
-          ctx.fillRect(0, 0, W, H);
-          ctx.drawImage(img, dx, dy, dw, dh);
-          await wait(1000 / 30);
-        }
+        
+        ctx.fillStyle = "#080e1c";
+        ctx.fillRect(0, 0, W, H);
+        ctx.drawImage(img, dx, dy, dw, dh);
+        
+        await wait(1000 / exportFps); // Donem temps al gravador per capturar-ho
       }
 
       await wait(100);
@@ -921,15 +1002,16 @@ export default function App() {
         <main className="flex-1 flex items-center justify-center bg-[#080e1c] p-3 overflow-hidden">
           <div className="relative rounded-xl overflow-hidden" style={{ width: `min(100%, calc((100vh - ${appMode === "animació" ? 220 : 90}px) * ${vw}/${vh}))`, aspectRatio: `${vw}/${vh}`, boxShadow:"0 0 0 1px #1e2d42, 0 8px 40px rgba(0,0,0,0.6), 0 0 60px rgba(0,212,212,0.05)" }}>
             <PoolCanvas 
-              appMode={appMode} // <-- AFEGEIX AQUESTA LÍNIA (Passant el mode des de l'App)
+              appMode={appMode}
               view={poolView} 
               frames={frames} 
               activeFrame={activeFrame} 
+              elapsed={elapsed}
+              frameDuration={frameDuration}
               selectedId={selectedId} 
               onSelectPlayer={setSelectedId} 
               onMovePlayer={updatePlayerPos} 
               onMoveBall={updateBallPos} 
-              prevFrame={appMode === "animació" ? prevFrame : undefined} 
               showPaths={appMode === "animació" && showPaths} 
               contextMenu={contextMenu} 
               onContextMenu={(id, other, x, y) => setContextMenu({ id, other, x, y })} 
