@@ -1,9 +1,10 @@
+Instal·lar:
+npm install
+
 Executar:
 npm run dev
 
 Falta:
 margin o padding inferior a la línia del temps
-que demani un nom en entrar
-que es pugui seleccionar una jugadora per fer canvis fent clic, que quan sarrosegui es vegi pero no se seleccioni, que es pugui selecionar fent clic al menu lateral dret
-l'apartat transicio no se pas perque serveix
+que demani un nom en entrar, nom + contrasenya i que es guardi a les cookies!! o millor correu per poder recuperar??
 que el vídeo sigui fluit i no pas imatges, igual que la reproducció
